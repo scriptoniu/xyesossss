@@ -11,7 +11,7 @@ message_map = {}
 # Папка для хранения файлов .session
 SESSION_DIR = 'sessions'
 
-# Убедитесь, что папка для сессий существует
+# Убедимся, что папка для сессий существует
 if not os.path.exists(SESSION_DIR):
     os.makedirs(SESSION_DIR)
 
@@ -29,6 +29,20 @@ async def start_client(phone):
 
         if not await client.is_user_authorized():
             print(f"❌ Сессия {phone} недействительна")
+            # Удаляем битую сессию
+            os.remove(session_file)
+
+            # Обновляем файл sessions.txt, удаляя битый номер
+            with open("sessions.txt", "r") as f:
+                phones = [line.strip() for line in f.readlines() if line.strip()]
+            
+            phones = [phone for phone in phones if phone != phone]
+
+            with open("sessions.txt", "w") as f:
+                for phone in phones:
+                    f.write(f"{phone}\n")
+
+            print(f"❌ Сессия {phone} была удалена из sessions.txt и папки sessions.")
             return None
 
         me = await client.get_me()
