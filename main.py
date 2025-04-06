@@ -7,15 +7,20 @@ API_HASH = '68a935aff803647b47acf3fb28a3d765'  # Заменить на свой 
 
 # Папка для хранения файлов .session
 SESSION_DIR = 'sessions'
-SESSIONS_FILE = 'Sessions.txt'
+SESSIONS_FILE = 'sessions.txt'  # Теперь правильно указываем sessions.txt
 
 # Убедитесь, что папка для сессий существует
 if not os.path.exists(SESSION_DIR):
     os.makedirs(SESSION_DIR)
 
+# Проверяем, существует ли файл sessions.txt, если нет - создаем его
+if not os.path.exists(SESSIONS_FILE):
+    with open(SESSIONS_FILE, 'w') as f:
+        pass  # Пустой файл будет создан
+
 # Функция для удаления битой сессии
 def remove_invalid_session_from_file(phone):
-    """Удаляет номер телефона из файла Sessions.txt, если сессия битая."""
+    """Удаляет номер телефона из файла sessions.txt, если сессия битая."""
     try:
         with open(SESSIONS_FILE, "r") as f:
             lines = f.readlines()
