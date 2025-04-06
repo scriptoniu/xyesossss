@@ -7,7 +7,7 @@ API_HASH = '68a935aff803647b47acf3fb28a3d765'  # Заменить на свой 
 
 # Папка для хранения файлов .session
 SESSION_DIR = 'sessions'
-SESSIONS_FILE = 'sessions.txt'  # Теперь правильно указываем sessions.txt
+SESSIONS_FILE = 'sessions.txt'
 
 # Убедитесь, что папка для сессий существует
 if not os.path.exists(SESSION_DIR):
@@ -32,6 +32,9 @@ def remove_invalid_session_from_file(phone):
                     f.write(line)
     except Exception as e:
         print(f"❌ Ошибка при удалении сессии из файла {SESSIONS_FILE}: {str(e)}")
+
+# Словарь для хранения ID сообщений: {source_message_id: {target_chat_id: target_message_id}}
+message_map = {}
 
 async def start_client(phone):
     print(f"🚀 Запуск клиента {phone}...")
@@ -122,12 +125,64 @@ async def main():
         except Exception as e:
             print(f"❌ Ошибка в обработчике NewMessage: {str(e)}")
 
+    @events.register(events.MessageEdited())
+    async def edit_handler(event):
+        try:
+            chat_id = event.chat_id
+            message_id = event.message.id
+            sender = await event.get_sender()
+
+            if chat_id == source_chat and sender.id == (await event.client.get_me()).id:
+                print(f"✏️ Изменено сообщение в исходном чате")
+
+                if message_id in message_map:
+                    for target in target_chats:
+                        try:
+                            target_message_id = message_map[message_id].get(target)
+                            if target_message_id:
+                                target_message = await event.client.get_messages(target, ids=target_message_id)
+                                if target_message:
+                                    await target_message.edit(event.message.text)
+                                    print(f"✅ Изменено в чате {target}")
+                        except Exception as e:
+                            print(f"❌ Ошибка при редактировании в {target}: {str(e)}")
+        except Exception as e:
+            print(f"❌ Ошибка в обработчике MessageEdited: {str(e)}")
+
+    @events.register(events.MessageDeleted())
+    async def delete_handler(event):
+        try:
+            chat_id = event.chat_id
+            deleted_message_ids = event.deleted_ids
+
+            if chat_id == source_chat:
+                print(f"❌ Удалено сообщение в исходном чате")
+
+                for message_id in deleted_message_ids:
+                    if message_id in message_map:
+                        for target in target_chats:
+                            try:
+                                target_message_id = message_map[message_id].get(target)
+                                if target_message_id:
+                                    await event.client.delete_messages(target, target_message_id)
+                                    print(f"✅ Удалено в чате {target}")
+                            except Exception as e:
+                                print(f"❌ Ошибка при удалении в {target}: {str(e)}")
+        except Exception as e:
+            print(f"❌ Ошибка в обработчике MessageDeleted: {str(e)}")
+
     # Назначаем обработчики каждому клиенту
     for client in clients:
         client.add_event_handler(handler)
+        client.add_event_handler(edit_handler)
+        client.add_event_handler(delete_handler)
 
     print("👂 Боты слушают сообщения...")
     await asyncio.gather(*[client.run_until_disconnected() for client in clients])
 
 if __name__ == '__main__':
     asyncio.run(main())
+
+
+                
+    
