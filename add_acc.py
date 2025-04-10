@@ -44,6 +44,13 @@ def is_session_exists(phone):
     session_path = os.path.join(SESSION_DIR, f"{phone.replace('+', '').replace(' ', '')}.session")
     return os.path.exists(session_path)
 
+# Функция для проверки, существует ли номер в sessions.txt
+def is_phone_in_sessions_file(phone):
+    """Проверяет, есть ли номер в sessions.txt"""
+    with open(SESSIONS_FILE, "r") as f:
+        lines = f.readlines()
+    return phone.strip() in [line.strip() for line in lines]
+
 # Добавление аккаунта
 while True:
     phone = input("\nВведи номер телефона (или q для выхода): ")
@@ -53,6 +60,9 @@ while True:
     # Проверка на существование сессии для этого номера
     if is_session_exists(phone):
         print(f"❌ Сессия для {phone} уже существует.")
+        # Проверка на наличие номера в sessions.txt
+        if is_phone_in_sessions_file(phone):
+            print(f"❌ Номер {phone} уже есть в sessions.txt.")
         continue  # Пропустить добавление, если сессия уже есть
 
     # Проверяем сессию на сервере
@@ -73,7 +83,7 @@ while True:
                 print(f"✅ Сессия сохранена: {session_name}.session")
                 # Добавляем номер в sessions.txt (удаляется если уже есть)
                 add_account_to_file(phone)
-                print("✅ Номер успешно добавлен в sessions.txt")
+                print(f"✅ Номер {phone} успешно добавлен в sessions.txt")
             else:
                 print("❌ Ошибка авторизации")
                 break
@@ -89,7 +99,7 @@ while True:
             print(f"✅ Сессия сохранена: {session_name}.session")
             # Добавляем номер в sessions.txt (удаляется если уже есть)
             add_account_to_file(phone)
-            print("✅ Номер успешно добавлен в sessions.txt")
+            print(f"✅ Номер {phone} успешно добавлен в sessions.txt")
         else:
             print("❌ Ошибка авторизации с 2FA")
             break
