@@ -38,6 +38,12 @@ def add_account_to_file(phone):
         for line in lines:
             f.write(line + "\n")
 
+# Функция для проверки, существует ли сессия
+def is_session_exists(phone):
+    """Проверяет, существует ли сессия для данного номера"""
+    session_path = os.path.join(SESSION_DIR, f"{phone.replace('+', '').replace(' ', '')}.session")
+    return os.path.exists(session_path)
+
 # Добавление аккаунта
 while True:
     phone = input("\nВведи номер телефона (или q для выхода): ")
@@ -45,13 +51,12 @@ while True:
         break
 
     # Проверка на существование сессии для этого номера
-    session_name = os.path.join(SESSION_DIR, phone.replace("+", "").replace(" ", ""))
-    
-    # Проверка на существование файла сессии
-    if os.path.exists(session_name + '.session'):
+    if is_session_exists(phone):
         print(f"❌ Сессия для {phone} уже существует.")
         continue  # Пропустить добавление, если сессия уже есть
 
+    # Проверяем сессию на сервере
+    session_name = os.path.join(SESSION_DIR, phone.replace("+", "").replace(" ", ""))
     client = TelegramClient(session_name, API_ID, API_HASH)
 
     try:
