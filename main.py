@@ -9,29 +9,14 @@ API_HASH = '68a935aff803647b47acf3fb28a3d765'  # Заменить на свой 
 SESSION_DIR = 'sessions'
 SESSIONS_FILE = 'sessions.txt'
 
-# Убедитесь, что папка для сессий существует
+# Убедимся, что папка для сессий существует
 if not os.path.exists(SESSION_DIR):
     os.makedirs(SESSION_DIR)
 
-# Проверяем, существует ли файл sessions.txt, если нет - создаем его
+# Убедимся, что файл sessions.txt существует
 if not os.path.exists(SESSIONS_FILE):
     with open(SESSIONS_FILE, 'w') as f:
-        pass  # Пустой файл будет создан
-
-# Функция для удаления битой сессии
-def remove_invalid_session_from_file(phone):
-    """Удаляет номер телефона из файла sessions.txt, если сессия битая."""
-    try:
-        with open(SESSIONS_FILE, "r") as f:
-            lines = f.readlines()
-
-        # Удаляем строку с номером телефона
-        with open(SESSIONS_FILE, "w") as f:
-            for line in lines:
-                if line.strip() != phone:
-                    f.write(line)
-    except Exception as e:
-        print(f"❌ Ошибка при удалении сессии из файла {SESSIONS_FILE}: {str(e)}")
+        pass  # Просто создаем пустой файл, если его нет
 
 # Словарь для хранения ID сообщений: {source_message_id: {target_chat_id: target_message_id}}
 message_map = {}
@@ -182,7 +167,4 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
-
-
-                
     
