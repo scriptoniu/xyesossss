@@ -1,6 +1,6 @@
 import os
 from telethon import TelegramClient
-from telethon.errors import SessionPasswordNeededError, SessionInvalidError
+from telethon.errors import SessionPasswordNeededError, FloodWaitError
 
 API_ID = 25293202  # Заменить на свой API ID
 API_HASH = '68a935aff803647b47acf3fb28a3d765'  # Заменить на свой API HASH
@@ -88,12 +88,10 @@ while True:
         else:
             print("❌ Ошибка авторизации с 2FA")
             break
-    except SessionInvalidError:
-        # Ошибка сессии — удаляем поврежденный файл сессии
-        print(f"❌ Сессия {session_name}.session повреждена, удаляем ее.")
-        if os.path.exists(session_name + '.session'):
-            os.remove(session_name + '.session')
-        continue
+    except FloodWaitError as e:
+        # Обрабатываем ошибку ограничения по времени (если Telegram ограничивает запросы)
+        print(f"❌ Ошибка: необходимо подождать {e.seconds} секунд из-за слишком частых запросов.")
+        break
     except Exception as e:
         print(f"❌ Ошибка: {e}")
     finally:
