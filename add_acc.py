@@ -1,4 +1,4 @@
-import os
+aimport os
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 
