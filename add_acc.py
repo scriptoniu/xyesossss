@@ -1,28 +1,26 @@
 import os
 from telethon import TelegramClient
-from telethon.errors import SessionPasswordNeededError, FloodWaitError
+from telethon.errors import SessionPasswordNeededError
+import asyncio
 
 API_ID = 25293202  # Заменить на свой API ID
 API_HASH = '68a935aff803647b47acf3fb28a3d765'  # Заменить на свой API HASH
 
+# Словарь для хранения ID сообщений: {source_message_id: {target_chat_id: target_message_id}}
+message_map = {}
+
 # Папка для хранения файлов .session
 SESSION_DIR = 'sessions'
-SESSIONS_FILE = 'sessions.txt'
 
-# Убедимся, что папка для сессий существует
+# Убедитесь, что папка для сессий существует
 if not os.path.exists(SESSION_DIR):
     os.makedirs(SESSION_DIR)
 
-# Убедимся, что файл sessions.txt существует
-if not os.path.exists(SESSIONS_FILE):
-    with open(SESSIONS_FILE, 'w') as f:
-        pass  # Просто создаем пустой файл, если его нет
-
 # Функция для добавления аккаунта в sessions.txt
 def add_account_to_file(phone):
-    """Добавляет номер телефона в sessions.txt, если его нет"""
-    if os.path.exists(SESSIONS_FILE):
-        with open(SESSIONS_FILE, "r") as f:
+    # Читаем текущие данные из файла
+    if os.path.exists("sessions.txt"):
+        with open("sessions.txt", "r") as f:
             lines = f.readlines()
     else:
         lines = []
@@ -34,80 +32,62 @@ def add_account_to_file(phone):
     lines.append(phone)
 
     # Записываем обновленный список обратно в файл
-    with open(SESSIONS_FILE, "w") as f:
+    with open("sessions.txt", "w") as f:
         for line in lines:
             f.write(line + "\n")
 
-# Функция для проверки, существует ли сессия
-def is_session_exists(phone):
-    """Проверяет, существует ли сессия для данного номера"""
-    session_path = os.path.join(SESSION_DIR, f"{phone.replace('+', '').replace(' ', '')}.session")
-    return os.path.exists(session_path)
 
-# Функция для проверки, существует ли номер в sessions.txt
-def is_phone_in_sessions_file(phone):
-    """Проверяет, есть ли номер в sessions.txt"""
-    with open(SESSIONS_FILE, "r") as f:
-        lines = f.readlines()
-    return phone.strip() in [line.strip() for line in lines]
-
-# Добавление аккаунта
-while True:
-    phone = input("\nВведи номер телефона (или q для выхода): ")
-    if phone.lower() == "q":
-        break
-
-    # Проверка на существование сессии для этого номера
-    if is_session_exists(phone):
-        print(f"❌ Сессия для {phone} уже существует.")
-        # Проверка на наличие номера в sessions.txt
-        if is_phone_in_sessions_file(phone):
-            print(f"❌ Номер {phone} уже есть в sessions.txt.")
-        continue  # Пропустить добавление, если сессия уже есть
-
-    # Проверяем сессию на сервере
+# Асинхронная функция для обработки добавления аккаунта
+async def add_account(phone):
     session_name = os.path.join(SESSION_DIR, phone.replace("+", "").replace(" ", ""))
     client = TelegramClient(session_name, API_ID, API_HASH)
 
     try:
-        client.connect()
+        # Подключаемся к клиенту и ждем авторизации
+        await client.connect()
 
-        if not client.is_user_authorized():
-            print(f"🔑 Авторизация для {phone}...")
-            client.send_code_request(phone)
+        if not await client.is_user_authorized():
+            await client.send_code_request(phone)
             code = input("Введи код из Telegram: ")
-            client.sign_in(phone, code)
+            await client.sign_in(phone, code)
 
             # Проверка на необходимость двухфакторной аутентификации
-            if client.is_user_authorized():
-                print(f"✅ Сессия сохранена: {session_name}.session")
+            if await client.is_user_authorized():
+                print(f"Сессия сохранена: {session_name}.session")
                 # Добавляем номер в sessions.txt (удаляется если уже есть)
                 add_account_to_file(phone)
-                print(f"✅ Номер {phone} успешно добавлен в sessions.txt")
+                print("Номер успешно добавлен в sessions.txt")
             else:
-                print("❌ Ошибка авторизации")
-                break
+                print("Ошибка авторизации")
         else:
-            print(f"✅ Клиент уже авторизован: {phone}")
+            print(f"Клиент уже авторизован: {phone}")
 
     except SessionPasswordNeededError:
         # Это ошибка при двухфакторной аутентификации
         password = input(f"Введи код 2FA для номера {phone}: ")
-        client.start(password=password)  # Пытаемся войти с 2FA
+        await client.start(password=password)  # Пытаемся войти с 2FA
 
-        if client.is_user_authorized():
-            print(f"✅ Сессия сохранена: {session_name}.session")
+        if await client.is_user_authorized():
+            print(f"Сессия сохранена: {session_name}.session")
             # Добавляем номер в sessions.txt (удаляется если уже есть)
             add_account_to_file(phone)
-            print(f"✅ Номер {phone} успешно добавлен в sessions.txt")
+            print("Номер успешно добавлен в sessions.txt")
         else:
-            print("❌ Ошибка авторизации с 2FA")
-            break
-    except FloodWaitError as e:
-        # Обрабатываем ошибку ограничения по времени (если Telegram ограничивает запросы)
-        print(f"❌ Ошибка: необходимо подождать {e.seconds} секунд из-за слишком частых запросов.")
-        break
+            print("Ошибка авторизации с 2FA")
     except Exception as e:
-        print(f"❌ Ошибка: {e}")
+        print(f"Ошибка: {e}")
     finally:
-        client.disconnect()
+        await client.disconnect()
+
+# Главная функция для ввода номера
+async def main():
+    while True:
+        phone = input("\nВведи номер телефона (или q для выхода): ")
+        if phone.lower() == "q":
+            break
+
+        await add_account(phone)
+
+# Запуск программы
+if __name__ == "__main__":
+    asyncio.run(main())
