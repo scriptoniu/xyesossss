@@ -1,6 +1,6 @@
 import os
 from telethon import TelegramClient
-from telethon.errors import SessionPasswordNeededError
+from telethon.errors import SessionPasswordNeededError, SessionInvalidError
 
 API_ID = 25293202  # Заменить на свой API ID
 API_HASH = '68a935aff803647b47acf3fb28a3d765'  # Заменить на свой API HASH
@@ -58,6 +58,7 @@ while True:
         client.connect()
 
         if not client.is_user_authorized():
+            print(f"🔑 Авторизация для {phone}...")
             client.send_code_request(phone)
             code = input("Введи код из Telegram: ")
             client.sign_in(phone, code)
@@ -87,6 +88,12 @@ while True:
         else:
             print("❌ Ошибка авторизации с 2FA")
             break
+    except SessionInvalidError:
+        # Ошибка сессии — удаляем поврежденный файл сессии
+        print(f"❌ Сессия {session_name}.session повреждена, удаляем ее.")
+        if os.path.exists(session_name + '.session'):
+            os.remove(session_name + '.session')
+        continue
     except Exception as e:
         print(f"❌ Ошибка: {e}")
     finally:
