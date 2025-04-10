@@ -5,9 +5,6 @@ from telethon.errors import SessionPasswordNeededError
 API_ID = 25293202  # Заменить на свой API ID
 API_HASH = '68a935aff803647b47acf3fb28a3d765'  # Заменить на свой API HASH
 
-# Словарь для хранения ID сообщений: {source_message_id: {target_chat_id: target_message_id}}
-message_map = {}
-
 # Папка для хранения файлов .session
 SESSION_DIR = 'sessions'
 
@@ -24,7 +21,7 @@ def add_account_to_file(phone):
     else:
         lines = []
 
-    # Удаляем дубликаты: если номер уже есть, удаляем его
+    # Удаляем дубликаты: если номер уже есть, то не добавляем его снова
     lines = [line.strip() for line in lines if line.strip() != phone]
 
     # Добавляем новый номер в конец файла
@@ -41,6 +38,14 @@ while True:
     if phone.lower() == "q":
         break
 
+    # Проверяем, не добавлен ли уже этот номер в sessions.txt
+    with open("sessions.txt", "r") as f:
+        existing_phones = [line.strip() for line in f.readlines()]
+    
+    if phone in existing_phones:
+        print(f"Номер {phone} уже добавлен в sessions.txt.")
+        continue  # Пропускаем добавление этого номера
+
     # Используем путь к файлу сессии внутри папки sessions
     session_name = os.path.join(SESSION_DIR, phone.replace("+", "").replace(" ", ""))
     client = TelegramClient(session_name, API_ID, API_HASH)
@@ -48,7 +53,9 @@ while True:
     try:
         client.connect()
 
+        # Проверяем авторизацию клиента
         if not client.is_user_authorized():
+            # Запрашиваем код для авторизации
             client.send_code_request(phone)
             code = input("Введи код из Telegram: ")
             client.sign_in(phone, code)
@@ -63,6 +70,7 @@ while True:
                 print("Ошибка авторизации")
                 break
         else:
+            # Если уже авторизован, сообщаем, что сессия существует
             print(f"Клиент уже авторизован: {phone}")
 
     except SessionPasswordNeededError:
