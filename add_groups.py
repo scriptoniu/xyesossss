@@ -2,11 +2,11 @@ import time
 import os
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError
-from telethon.tl.functions.contacts import InviteToChannelRequest
+from telethon.tl.functions.channels import InviteToChannelRequest  # Правильный импорт
 import asyncio
 
-API_ID = 'your_api_id'  # Замените на ваш API_ID
-API_HASH = 'your_api_hash'  # Замените на ваш API_HASH
+API_ID = '25293202'  # Замените на ваш API_ID
+API_HASH = '68a935aff803647b47acf3fb28a3d765'  # Замените на ваш API_HASH
 
 # Путь к файлу сессии
 SESSION_DIR = 'sessions'
