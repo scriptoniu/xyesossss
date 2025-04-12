@@ -5,10 +5,10 @@ from telethon.errors import FloodWaitError
 from telethon.tl.functions.channels import InviteToChannelRequest  # Правильный импорт
 import asyncio
 
-API_ID = '25293202'  # Замените на ваш API_ID
-API_HASH = '68a935aff803647b47acf3fb28a3d765'  # Замените на ваш API_HASH
+API_ID = 25293202  # Ваш API ID
+API_HASH = '68a935aff803647b47acf3fb28a3d765'  # Ваш API HASH
 
-# Путь к файлу сессии
+# Папка для сессий
 SESSION_DIR = 'sessions'
 
 # Функция для чтения номеров телефонов из файла sessions.txt
