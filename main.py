@@ -176,7 +176,7 @@ async def main():
         except Exception as e:
             print(f"❌ Ошибка в обработчике MessageDeleted: {str(e)}")
 
-    # Назначаем обработчики каждому клиенту
+    # Назначаем обрабтчики каждому клиенту
     for client in clients:
         client.add_event_handler(handler)
         client.add_event_handler(edit_handler)
