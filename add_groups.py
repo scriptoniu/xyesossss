@@ -2,7 +2,7 @@ import time
 import os
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError
-from telethon.tl.functions.channels import InviteToChannelRequest  # Правильный импорт
+from telethon.tl.functions.channels import InviteToChannelRequest
 import asyncio
 
 API_ID = 25293202  # Ваш API ID
@@ -68,9 +68,16 @@ async def join_groups():
             continue
 
         print(f"🚀 Запуск клиента для номера {phone}...")
+        
+        # Инициализация клиента с сессией
         client = TelegramClient(session_file, API_ID, API_HASH)
 
+        # Запускаем клиента без запроса номера телефона
         await client.start()
+
+        # Получаем информацию о себе (с использованием await)
+        me = await client.get_me()
+        print(f"Аккаунт {me.username} ({me.id}) успешно подключен.")
 
         joined_count = 0
         for group_link in groups:
