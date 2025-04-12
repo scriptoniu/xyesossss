@@ -2,7 +2,7 @@ import time
 import os
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError
-from telethon.tl.functions.contacts import AddChatUserRequest
+from telethon.tl.functions.contacts import InviteToChannelRequest
 import asyncio
 
 API_ID = 'your_api_id'  # Замените на ваш API_ID
@@ -38,7 +38,7 @@ async def join_group(client, group_link):
         group = await client.get_entity(group_link)
         
         # Вступаем в группу
-        await client(AddChatUserRequest(group.id, client.get_me().id))
+        await client(InviteToChannelRequest(group, [client.get_me()]))  # Используем InviteToChannelRequest
         print(f"✅ Вступил в группу: {group_link}")
     except FloodWaitError as e:
         # Если ограничение на вступление, ждем указанное время
