@@ -21,6 +21,23 @@ if not os.path.exists(SESSIONS_FILE):
 # Словарь для хранения ID сообщений: {source_message_id: {target_chat_id: target_message_id}}
 message_map = {}
 
+# Функция для удаления поврежденных сессий из файла sessions.txt и папки sessions
+def remove_invalid_session_from_file(phone):
+    try:
+        # Читаем текущие данные из файла
+        with open(SESSIONS_FILE, "r") as f:
+            lines = f.readlines()
+
+        # Записываем обратно только валидные строки, исключая поврежденную сессию
+        with open(SESSIONS_FILE, "w") as f:
+            for line in lines:
+                if line.strip() != phone:
+                    f.write(line)
+            print(f"Номер {phone} удален из sessions.txt")
+    except Exception as e:
+        print(f"Ошибка при удалении поврежденной сессии из файла: {e}")
+
+# Функция для старта клиента
 async def start_client(phone):
     print(f"🚀 Запуск клиента {phone}...")
 
@@ -45,6 +62,9 @@ async def start_client(phone):
         return client
     except Exception as e:
         print(f"❌ Ошибка при запуске клиента {phone}: {str(e)}")
+        # Если сессия повреждена, удаляем файл и номер из sessions.txt
+        os.remove(session_file)
+        remove_invalid_session_from_file(phone)
         return None
 
 async def main():
@@ -167,4 +187,3 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
-    
