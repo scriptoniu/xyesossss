@@ -6,9 +6,6 @@ import asyncio
 API_ID = 25293202  # Заменить на свой API ID
 API_HASH = '68a935aff803647b47acf3fb28a3d765'  # Заменить на свой API HASH
 
-# Словарь для хранения ID сообщений: {source_message_id: {target_chat_id: target_message_id}}
-message_map = {}
-
 # Папка для хранения файлов .session
 SESSION_DIR = 'sessions'
 
@@ -47,34 +44,33 @@ async def add_account(phone):
         await client.connect()
 
         if not await client.is_user_authorized():
-            # Если не авторизован, отправляем запрос на код
             await client.send_code_request(phone)
-            code = input(f"Введи код для номера {phone} из Telegram: ")
+            code = input("Введи код из Telegram: ")
             await client.sign_in(phone, code)
 
             # Проверка на необходимость двухфакторной аутентификации
             if await client.is_user_authorized():
-                print(f"Сессия сохранена для {phone}: {session_name}.session")
+                print(f"Сессия сохранена: {session_name}.session")
                 # Добавляем номер в sessions.txt (удаляется если уже есть)
                 add_account_to_file(phone)
-                print(f"Номер {phone} успешно добавлен в sessions.txt")
+                print("Номер успешно добавлен в sessions.txt")
             else:
-                print(f"Ошибка авторизации для {phone}: не удалось пройти обычную аутентификацию.")
+                print("Ошибка авторизации")
         else:
-            print(f"Клиент уже авторизован для номера {phone}")
+            print(f"Клиент уже авторизован: {phone}")
 
     except SessionPasswordNeededError:
         # Это ошибка при двухфакторной аутентификации
-        password = input(f"Введите код 2FA для номера {phone}: ")
+        password = input(f"Введи код 2FA для номера {phone}: ")
         await client.start(password=password)  # Пытаемся войти с 2FA
 
         if await client.is_user_authorized():
-            print(f"Сессия успешно сохранена для {phone}: {session_name}.session")
+            print(f"Сессия сохранена: {session_name}.session")
             # Добавляем номер в sessions.txt (удаляется если уже есть)
             add_account_to_file(phone)
-            print(f"Номер {phone} успешно добавлен в sessions.txt")
+            print("Номер успешно добавлен в sessions.txt")
         else:
-            print(f"Ошибка авторизации с 2FA для {phone}")
+            print("Ошибка авторизации с 2FA")
     except Exception as e:
         print(f"Ошибка: {e}")
     finally:
