@@ -64,7 +64,7 @@ async def main():
         source_chat = int(f.read().strip())
 
     with open("target_chats.txt", "r") as f:
-        target_chats = [int(line.strip()) for line in f.readlines() if line.strip()]
+        target_chats = [int(line.strip()) for line in f if line.strip()]
 
     clients = []
     for phone in phones:
@@ -89,50 +89,42 @@ async def main():
                 message = event.message
                 print(f"📨 Новое сообщение, пересылаем...")
 
-                batch_size = 10
-                for i in range(0, len(target_chats), batch_size):
-                    batch = target_chats[i:i+batch_size]
+                for target in target_chats:
+                    try:
+                        reply_to = None
+                        if message.reply_to:
+                            replied = await message.get_reply_message()
+                            if replied:
+                                async for msg in event.client.iter_messages(target, search=replied.text):
+                                    if msg.text == replied.text:
+                                        reply_to = msg.id
+                                        break
 
-                    for target in batch:
-                        try:
-                            reply_to = None
-                            if message.reply_to:
-                                replied = await message.get_reply_message()
-                                if replied:
-                                    async for msg in event.client.iter_messages(target, search=replied.text):
-                                        if msg.text == replied.text:
-                                            reply_to = msg.id
-                                            break
+                        if message.media:
+                            sent_message = await event.client.send_file(
+                                target, message.media,
+                                caption=message.text or "",
+                                reply_to=reply_to
+                            )
+                        else:
+                            sent_message = await event.client.send_message(
+                                target, message.text,
+                                reply_to=reply_to
+                            )
 
-                            if message.media:
-                                sent_message = await event.client.send_file(
-                                    target, message.media,
-                                    caption=message.text or "",
-                                    reply_to=reply_to
-                                )
-                            else:
-                                sent_message = await event.client.send_message(
-                                    target, message.text,
-                                    reply_to=reply_to
-                                )
+                        if message.id not in message_map:
+                            message_map[message.id] = {}
+                        message_map[message.id][target] = sent_message.id
 
-                            if message.id not in message_map:
-                                message_map[message.id] = {}
-                            message_map[message.id][target] = sent_message.id
+                        print(f"✅ Отправлено в чат {target}: ID {sent_message.id}")
 
-                            print(f"✅ Отправлено в чат {target}: ID {sent_message.id}")
+                    except Exception as e:
+                        print(f"❌ Ошибка при отправке в {target}: {e}")
 
-                        except Exception as e:
-                            print(f"❌ Ошибка при отправке в {target}: {str(e)}")
-
-                    if i + batch_size < len(target_chats):
-                        print("⏳ Ждем 5 секунд перед следующим батчем...")
-                        await asyncio.sleep(5)
-            else:
-                pass  # Сообщение не от владельца или не из исходного чата
+                    await asyncio.sleep(1)  # <–– ЗАДЕРЖКА между каждым чатом
 
         except Exception as e:
-            print(f"⚠️ Ошибка в обработчике NewMessage: {e}")
+            print(f"⚠️ Ошибка в NewMessage: {e}")
 
     @events.register(events.MessageEdited())
     async def edit_handler(event):
@@ -153,7 +145,7 @@ async def main():
                         except Exception as e:
                             print(f"❌ Ошибка редактирования в {target}: {e}")
         except Exception as e:
-            print(f"⚠️ Ошибка в обработчике MessageEdited: {e}")
+            print(f"⚠️ Ошибка в MessageEdited: {e}")
 
     @events.register(events.MessageDeleted())
     async def delete_handler(event):
@@ -173,7 +165,7 @@ async def main():
                             except Exception as e:
                                 print(f"❌ Ошибка удаления в {target}: {e}")
         except Exception as e:
-            print(f"⚠️ Ошибка в обработчике MessageDeleted: {e}")
+            print(f"⚠️ Ошибка в MessageDeleted: {e}")
 
     for client in clients:
         client.add_event_handler(handler)
