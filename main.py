@@ -1,10 +1,10 @@
 import os
-from telethon import TelegramClient, events
 import asyncio
-import math
+from telethon import TelegramClient, events
+from telethon.errors import SessionPasswordNeededError
 
-API_ID = 25293202  # Заменить на свой API ID
-API_HASH = '68a935aff803647b47acf3fb28a3d765'  # Заменить на свой API HASH
+API_ID = 25293202
+API_HASH = '68a935aff803647b47acf3fb28a3d765'
 
 SESSION_DIR = 'sessions'
 SESSIONS_FILE = 'sessions.txt'
@@ -13,7 +13,7 @@ if not os.path.exists(SESSION_DIR):
     os.makedirs(SESSION_DIR)
 
 if not os.path.exists(SESSIONS_FILE):
-    with open(SESSIONS_FILE, 'w') as f:
+    with open(SESSIONS_FILE, 'w'):
         pass
 
 message_map = {}
@@ -22,21 +22,18 @@ def remove_invalid_session_from_file(phone):
     try:
         with open(SESSIONS_FILE, "r") as f:
             lines = f.readlines()
-
         with open(SESSIONS_FILE, "w") as f:
             for line in lines:
                 if line.strip() != phone:
                     f.write(line)
-        print(f"Номер {phone} удален из sessions.txt")
+        print(f"📤 Удалена поврежденная сессия: {phone}")
     except Exception as e:
-        print(f"Ошибка при удалении поврежденной сессии: {e}")
+        print(f"⚠️ Ошибка при удалении сессии: {e}")
 
 async def start_client(phone):
-    print(f"🚀 Запуск клиента {phone}...")
-
     session_file = os.path.join(SESSION_DIR, f"{phone.replace('+', '')}.session")
     if not os.path.exists(session_file):
-        print(f"❌ Сессия {phone} не найдена")
+        print(f"❌ Сессия не найдена: {phone}")
         return None
 
     try:
@@ -44,29 +41,30 @@ async def start_client(phone):
         await client.connect()
 
         if not await client.is_user_authorized():
-            print(f"❌ Сессия {phone} недействительна")
+            print(f"❌ Сессия недействительна: {phone}")
             os.remove(session_file)
             remove_invalid_session_from_file(phone)
             return None
 
         me = await client.get_me()
-        print(f"✅ Клиент {phone} запущен как: {me.first_name} (@{me.username})")
+        print(f"✅ Клиент {phone} запущен как {me.first_name} (@{me.username})")
         return client
+
     except Exception as e:
-        print(f"❌ Ошибка при запуске клиента {phone}: {str(e)}")
+        print(f"⚠️ Ошибка при запуске клиента {phone}: {e}")
         os.remove(session_file)
         remove_invalid_session_from_file(phone)
         return None
 
 async def main():
     with open(SESSIONS_FILE, "r") as f:
-        phones = [line.strip() for line in f.readlines() if line.strip()]
+        phones = [line.strip() for line in f if line.strip()]
 
     with open("source_chat.txt", "r") as f:
         source_chat = int(f.read().strip())
 
     with open("target_chats.txt", "r") as f:
-        target_chats = [int(line.strip()) for line in f.readlines()]
+        target_chats = [int(line.strip()) for line in f.readlines() if line.strip()]
 
     clients = []
     for phone in phones:
@@ -75,28 +73,26 @@ async def main():
             clients.append(client)
 
     if not clients:
-        print("❌ Нет доступных клиентов")
+        print("❌ Нет активных клиентов.")
         return
 
-    print(f"✅ Запущено клиентов: {len(clients)}")
+    print(f"✅ Активных клиентов: {len(clients)}")
 
-    # === HANDLER: Новое сообщение ===
     @events.register(events.NewMessage())
     async def handler(event):
         try:
             chat_id = event.chat_id
             sender = await event.get_sender()
+            me = await event.client.get_me()
 
-            if chat_id == source_chat and sender.id == (await event.client.get_me()).id:
+            if chat_id == source_chat and sender.id == me.id:
                 message = event.message
-                print(f"📨 Новое сообщение от владельца, пересылаем...")
+                print(f"📨 Новое сообщение, пересылаем...")
 
                 batch_size = 10
-                delay_between_batches = 5
-                total_batches = math.ceil(len(target_chats) / batch_size)
+                for i in range(0, len(target_chats), batch_size):
+                    batch = target_chats[i:i+batch_size]
 
-                for batch_index in range(total_batches):
-                    batch = target_chats[batch_index * batch_size : (batch_index + 1) * batch_size]
                     for target in batch:
                         try:
                             reply_to = None
@@ -109,74 +105,82 @@ async def main():
                                             break
 
                             if message.media:
-                                sent = await event.client.send_file(
-                                    target, message.media, caption=message.text, reply_to=reply_to)
+                                sent_message = await event.client.send_file(
+                                    target, message.media,
+                                    caption=message.text or "",
+                                    reply_to=reply_to
+                                )
                             else:
-                                sent = await event.client.send_message(
-                                    target, message.text, reply_to=reply_to)
+                                sent_message = await event.client.send_message(
+                                    target, message.text,
+                                    reply_to=reply_to
+                                )
 
                             if message.id not in message_map:
                                 message_map[message.id] = {}
-                            message_map[message.id][target] = sent.id
+                            message_map[message.id][target] = sent_message.id
 
-                            print(f"✅ Отправлено в чат {target}: ID {sent.id}")
+                            print(f"✅ Отправлено в чат {target}: ID {sent_message.id}")
+
                         except Exception as e:
                             print(f"❌ Ошибка при отправке в {target}: {str(e)}")
 
-                    if batch_index < total_batches - 1:
-                        print(f"⏳ Ждем {delay_between_batches} секунд...")
-                        await asyncio.sleep(delay_between_batches)
+                    if i + batch_size < len(target_chats):
+                        print("⏳ Ждем 5 секунд перед следующим батчем...")
+                        await asyncio.sleep(5)
             else:
-                print("❌ Сообщение не от владельца или не из исходного чата")
-        except Exception as e:
-            print(f"❌ Ошибка в обработчике NewMessage: {str(e)}")
+                pass  # Сообщение не от владельца или не из исходного чата
 
-    # === HANDLER: Редактирование ===
+        except Exception as e:
+            print(f"⚠️ Ошибка в обработчике NewMessage: {e}")
+
     @events.register(events.MessageEdited())
     async def edit_handler(event):
         try:
-            if event.chat_id == source_chat:
-                msg_id = event.message.id
-                print("✏️ Изменено сообщение в исходном чате")
-                if msg_id in message_map:
+            chat_id = event.chat_id
+            message_id = event.message.id
+            sender = await event.get_sender()
+            me = await event.client.get_me()
+
+            if chat_id == source_chat and sender.id == me.id:
+                if message_id in message_map:
                     for target in target_chats:
                         try:
-                            target_id = message_map[msg_id].get(target)
-                            if target_id:
-                                msg = await event.client.get_messages(target, ids=target_id)
-                                if msg:
-                                    await msg.edit(event.message.text)
-                                    print(f"✅ Изменено в чате {target}")
+                            target_message_id = message_map[message_id].get(target)
+                            if target_message_id:
+                                await event.client.edit_message(target, target_message_id, event.message.text)
+                                print(f"✏️ Изменено в чате {target}")
                         except Exception as e:
                             print(f"❌ Ошибка редактирования в {target}: {e}")
         except Exception as e:
-            print(f"❌ Ошибка в edit_handler: {e}")
+            print(f"⚠️ Ошибка в обработчике MessageEdited: {e}")
 
-    # === HANDLER: Удаление ===
     @events.register(events.MessageDeleted())
     async def delete_handler(event):
         try:
-            if event.chat_id == source_chat:
-                for msg_id in event.deleted_ids:
+            chat_id = event.chat_id
+            deleted_ids = event.deleted_ids
+
+            if chat_id == source_chat:
+                for msg_id in deleted_ids:
                     if msg_id in message_map:
                         for target in target_chats:
                             try:
-                                target_id = message_map[msg_id].get(target)
-                                if target_id:
-                                    await event.client.delete_messages(target, target_id)
-                                    print(f"🗑️ Удалено в чате {target}")
+                                target_msg_id = message_map[msg_id].get(target)
+                                if target_msg_id:
+                                    await event.client.delete_messages(target, target_msg_id)
+                                    print(f"🗑 Удалено в чате {target}")
                             except Exception as e:
                                 print(f"❌ Ошибка удаления в {target}: {e}")
         except Exception as e:
-            print(f"❌ Ошибка в delete_handler: {e}")
+            print(f"⚠️ Ошибка в обработчике MessageDeleted: {e}")
 
-    # Назначаем обработчики каждому клиенту
     for client in clients:
         client.add_event_handler(handler)
         client.add_event_handler(edit_handler)
         client.add_event_handler(delete_handler)
 
-    print("👂 Слушаем сообщения...")
+    print("👂 Ожидаем события...")
     await asyncio.gather(*[client.run_until_disconnected() for client in clients])
 
 if __name__ == '__main__':
