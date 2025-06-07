@@ -18,7 +18,8 @@ LOG_CHAT_ID = int(os.getenv('LOG_CHAT_ID'))
 SESSION_DIR = 'sessions'
 SESSIONS_FILE = 'sessions.txt'
 PROXY_FILE = 'proxies.txt'
-DB_LOCK_RETRY_DELAY = 5  # Задержка при блокировке базы (секунды)
+MAX_CONCURRENT_CONNECTIONS = 3  # Лимит одновременных подключений
+SESSION_LOCK_TIMEOUT = 10  # Таймаут блокировки сессии (секунды)
 
 # Настройка логирования
 logging.basicConfig(
@@ -72,44 +73,50 @@ async def load_proxies():
                 logger.error(f"Ошибка парсинга прокси {line}: {e}")
     return proxies
 
-async def start_client(phone, proxy, error_logger, retry_count=3):
-    """Запускает клиент с обработкой ошибок и повторными попытками"""
+async def start_client(phone, proxy, error_logger):
+    """Запускает клиент с улучшенной обработкой ошибок сессий"""
     session_file = os.path.join(SESSION_DIR, phone.replace('+', '') + '.session')
     
-    for attempt in range(retry_count):
-        try:
-            client = TelegramClient(session_file, API_ID, API_HASH, proxy=proxy)
-            await client.connect()
-
-            if not await client.is_user_authorized():
-                error_msg = f"Сессия недействительна: {phone}"
-                logger.error(error_msg)
-                await error_logger.log_error(f"❌ {error_msg}")
-                return None
-
-            me = await client.get_me()
-            logger.info(f"[{phone} запущен как @{me.username}]")
-            return client
-
-        except Exception as e:
-            if "database is locked" in str(e):
-                if attempt < retry_count - 1:
-                    logger.warning(f"Блокировка базы ({phone}), попытка {attempt + 1}/{retry_count}...")
-                    await asyncio.sleep(DB_LOCK_RETRY_DELAY)
+    try:
+        # Проверка блокировки сессии
+        start_time = datetime.now()
+        while (datetime.now() - start_time).seconds < SESSION_LOCK_TIMEOUT:
+            try:
+                client = TelegramClient(session_file, API_ID, API_HASH, proxy=proxy)
+                await client.connect()
+                break
+            except Exception as e:
+                if "database is locked" in str(e):
+                    await asyncio.sleep(1)
                     continue
-                
-                error_msg = f"Блокировка базы для {phone} после {retry_count} попыток"
-                logger.error(error_msg)
-                await error_logger.log_error(f"⚠️ {error_msg}")
-                return None
-            
-            error_msg = f"Ошибка подключения {phone}: {type(e).__name__} - {str(e)}"
+                raise
+
+        if not await client.is_user_authorized():
+            error_msg = f"Сессия недействительна: {phone}"
             logger.error(error_msg)
-            await error_logger.log_error(f"⚠️ {error_msg}")
+            await error_logger.log_error(f"❌ {error_msg}")
             return None
 
+        me = await client.get_me()
+        logger.info(f"[{phone} запущен как @{me.username}]")
+        return client
+
+    except Exception as e:
+        error_type = type(e).__name__
+        error_msg = f"Ошибка подключения {phone}: {error_type} - {str(e)}"
+        logger.error(error_msg)
+        
+        # Особые случаи обработки ошибок
+        if "AuthKeyDuplicatedError" in error_type:
+            await error_logger.log_error(f"⚠️ КРИТИЧЕСКАЯ ОШИБКА: {phone} - сессия используется с другого IP!")
+            os.remove(session_file)  # Удаляем проблемную сессию
+        else:
+            await error_logger.log_error(f"⚠️ {error_msg}")
+        
+        return None
+
 async def safe_send_message(client, target, message, reply_to, error_logger):
-    """Безопасная отправка сообщения"""
+    """Безопасная отправка сообщения с обработкой сетевых ошибок"""
     try:
         if message.media:
             sent = await client.send_file(
@@ -168,9 +175,9 @@ async def main():
     proxy_cycle = cycle(proxies) if proxies else None
     logger.info(f"[Загружено прокси: {len(proxies)}]")
 
-    # Запуск клиентов с ограничением одновременных подключений
+    # Запуск клиентов с ограничением
     clients = []
-    semaphore = asyncio.Semaphore(3)  # Макс 3 одновременных подключения
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_CONNECTIONS)
 
     async def connect_account(phone):
         async with semaphore:
