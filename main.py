@@ -18,8 +18,8 @@ LOG_CHAT_ID = int(os.getenv('LOG_CHAT_ID'))
 SESSION_DIR = 'sessions'
 SESSIONS_FILE = 'sessions.txt'
 PROXY_FILE = 'proxies.txt'
-MAX_CONCURRENT_CONNECTIONS = 3  # Лимит одновременных подключений
-SESSION_LOCK_TIMEOUT = 10  # Таймаут блокировки сессии (секунды)
+MAX_RETRIES = 2  # Количество попыток подключения
+DELAY_BETWEEN_MESSAGES = 1  # Задержка между сообщениями (секунды)
 
 # Настройка логирования
 logging.basicConfig(
@@ -74,22 +74,29 @@ async def load_proxies():
     return proxies
 
 async def start_client(phone, proxy, error_logger):
-    """Запускает клиент с улучшенной обработкой ошибок сессий"""
+    """Пытается подключиться через прокси, при неудаче - без прокси"""
     session_file = os.path.join(SESSION_DIR, phone.replace('+', '') + '.session')
     
+    # Сначала пробуем через прокси
+    if proxy:
+        try:
+            client = TelegramClient(session_file, API_ID, API_HASH, proxy=proxy)
+            await client.connect()
+
+            if await client.is_user_authorized():
+                me = await client.get_me()
+                logger.info(f"[{phone} запущен через ПРОКСИ как @{me.username}]")
+                return client
+            
+            logger.warning(f"Не удалось авторизоваться через прокси: {phone}")
+            await client.disconnect()
+        except Exception as e:
+            logger.warning(f"Ошибка подключения через прокси {phone}: {type(e).__name__}")
+
+    # Если не получилось через прокси, пробуем прямое подключение
     try:
-        # Проверка блокировки сессии
-        start_time = datetime.now()
-        while (datetime.now() - start_time).seconds < SESSION_LOCK_TIMEOUT:
-            try:
-                client = TelegramClient(session_file, API_ID, API_HASH, proxy=proxy)
-                await client.connect()
-                break
-            except Exception as e:
-                if "database is locked" in str(e):
-                    await asyncio.sleep(1)
-                    continue
-                raise
+        client = TelegramClient(session_file, API_ID, API_HASH)
+        await client.connect()
 
         if not await client.is_user_authorized():
             error_msg = f"Сессия недействительна: {phone}"
@@ -98,25 +105,18 @@ async def start_client(phone, proxy, error_logger):
             return None
 
         me = await client.get_me()
-        logger.info(f"[{phone} запущен как @{me.username}]")
+        logger.info(f"[{phone} запущен БЕЗ ПРОКСИ как @{me.username}]")
         return client
 
     except Exception as e:
         error_type = type(e).__name__
         error_msg = f"Ошибка подключения {phone}: {error_type} - {str(e)}"
         logger.error(error_msg)
-        
-        # Особые случаи обработки ошибок
-        if "AuthKeyDuplicatedError" in error_type:
-            await error_logger.log_error(f"⚠️ КРИТИЧЕСКАЯ ОШИБКА: {phone} - сессия используется с другого IP!")
-            os.remove(session_file)  # Удаляем проблемную сессию
-        else:
-            await error_logger.log_error(f"⚠️ {error_msg}")
-        
+        await error_logger.log_error(f"⚠️ {error_msg}")
         return None
 
 async def safe_send_message(client, target, message, reply_to, error_logger):
-    """Безопасная отправка сообщения с обработкой сетевых ошибок"""
+    """Безопасная отправка сообщения с обработкой ошибок"""
     try:
         if message.media:
             sent = await client.send_file(
@@ -133,7 +133,7 @@ async def safe_send_message(client, target, message, reply_to, error_logger):
             )
         
         logger.info(f"[Отправлено в чат {target}: ID {sent.id}]")
-        await asyncio.sleep(1)  # Задержка 1 секунда
+        await asyncio.sleep(DELAY_BETWEEN_MESSAGES)
         return sent
     except Exception as e:
         error_msg = f"Ошибка отправки в {target}: {type(e).__name__} - {str(e)}"
@@ -175,21 +175,16 @@ async def main():
     proxy_cycle = cycle(proxies) if proxies else None
     logger.info(f"[Загружено прокси: {len(proxies)}]")
 
-    # Запуск клиентов с ограничением
+    # Запуск клиентов
     clients = []
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_CONNECTIONS)
-
-    async def connect_account(phone):
-        async with semaphore:
-            proxy = next(proxy_cycle) if proxy_cycle else None
-            logger.info(f"Подключаем {phone} через прокси: {proxy[:2] if proxy else 'нет'}")
-            
-            client = await start_client(phone, proxy, error_logger)
-            if client:
-                clients.append(client)
-            await asyncio.sleep(2)  # Задержка между подключениями
-
-    await asyncio.gather(*[connect_account(phone) for phone in phones])
+    for phone in phones:
+        proxy = next(proxy_cycle) if proxy_cycle else None
+        logger.info(f"Подключаем {phone} (прокси: {proxy[:2] if proxy else 'нет'})")
+        
+        client = await start_client(phone, proxy, error_logger)
+        if client:
+            clients.append(client)
+            await asyncio.sleep(3)  # Задержка между подключениями
 
     if not clients:
         error_msg = "Нет активных клиентов"
@@ -199,6 +194,7 @@ async def main():
 
     logger.info(f"[Успешно запущено клиентов: {len(clients)}]")
 
+    # Словарь для отслеживания пересланных сообщений
     message_map = {}
 
     @events.register(events.NewMessage(chats=source_chat))
@@ -209,12 +205,14 @@ async def main():
                 logger.info(f"Новое сообщение для пересылки (ID: {event.message.id})")
                 
                 for target in target_chats:
+                    # Определяем сообщение для ответа
                     reply_to = None
                     if event.message.reply_to_msg_id:
                         original_reply = await event.message.get_reply_message()
                         if original_reply and original_reply.id in message_map:
                             reply_to = message_map[original_reply.id].get(target)
                     
+                    # Отправляем сообщение
                     sent_message = await safe_send_message(
                         event.client,
                         target,
@@ -223,20 +221,23 @@ async def main():
                         error_logger
                     )
                     
+                    # Сохраняем информацию о пересланном сообщении
                     if sent_message:
                         if event.message.id not in message_map:
                             message_map[event.message.id] = {}
                         message_map[event.message.id][target] = sent_message.id
+
         except Exception as e:
             error_msg = f"Ошибка в обработчике сообщений: {type(e).__name__} - {str(e)}"
             logger.error(error_msg)
             await error_logger.log_error(f"⚠️ {error_msg}")
 
-    # Регистрация обработчиков
+    # Регистрируем обработчики для всех клиентов
     for client in clients:
         client.add_event_handler(message_handler)
 
-    logger.info("Ожидаем сообщения...")
+    logger.info("👂 Ожидаем сообщения...")
+    await error_logger.log_error("👂 Бот готов к работе")
 
     try:
         await asyncio.gather(*[client.run_until_disconnected() for client in clients])
