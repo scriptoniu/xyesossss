@@ -12,12 +12,13 @@ API_HASH = os.getenv('API_HASH', '68a935aff803647b47acf3fb28a3d765')
 PROXY_FILE = 'proxies.txt'  # Файл с прокси
 
 SESSION_DIR = 'sessions'
-SESSIONS_FILE = 'sessions.txt'
+SESSIONS_FILE = 'sessions.txt'  # Исправлено: правильное название переменной
 
 if not os.path.exists(SESSION_DIR):
     os.makedirs(SESSION_DIR)
 
-if not os.path.exists(SESSION_FILE):
+# Исправленная строка: используем SESSIONS_FILE вместо SESSION_FILE
+if not os.path.exists(SESSIONS_FILE):
     with open(SESSIONS_FILE, 'w'):
         pass
 
