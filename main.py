@@ -2,24 +2,20 @@ import os
 import asyncio
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
-from telethon.sessions import StringSession
-import socks
+import socks  # Для прокси
 
 API_ID = 25293202
 API_HASH = '68a935aff803647b47acf3fb28a3d765'
 
 SESSION_DIR = 'sessions'
 SESSIONS_FILE = 'sessions.txt'
-PROXY_FILE = 'proxies.txt'
 
 if not os.path.exists(SESSION_DIR):
     os.makedirs(SESSION_DIR)
 
 if not os.path.exists(SESSIONS_FILE):
-    open(SESSIONS_FILE, 'w').close()
-
-if not os.path.exists(PROXY_FILE):
-    open(PROXY_FILE, 'w').close()
+    with open(SESSIONS_FILE, 'w'):
+        pass
 
 message_map = {}
 
@@ -37,18 +33,19 @@ def remove_invalid_session_from_file(phone):
 
 def load_proxies():
     proxies = []
-    with open(PROXY_FILE, 'r') as f:
+    if not os.path.exists('proxies.txt'):
+        return proxies
+    with open('proxies.txt', 'r') as f:
         for line in f:
             parts = line.strip().split(':')
             if len(parts) == 2:
                 ip, port = parts
                 proxy = (socks.SOCKS5, ip, int(port))
+                proxies.append(proxy)
             elif len(parts) == 4:
                 ip, port, user, pwd = parts
                 proxy = (socks.SOCKS5, ip, int(port), True, user, pwd)
-            else:
-                continue
-            proxies.append(proxy)
+                proxies.append(proxy)
     return proxies
 
 async def start_client(phone, proxy=None):
@@ -90,10 +87,9 @@ async def main():
 
     proxies = load_proxies()
     clients = []
-
     for idx, phone in enumerate(phones):
         proxy = proxies[idx // 10] if idx // 10 < len(proxies) else None
-        client = await start_client(f"+{phone}", proxy)
+        client = await start_client(f"+{phone}", proxy=proxy)
         if client:
             clients.append(client)
 
@@ -142,10 +138,11 @@ async def main():
                         message_map[message.id][target] = sent_message.id
 
                         print(f"✅ Отправлено в чат {target}: ID {sent_message.id}")
+
                     except Exception as e:
                         print(f"❌ Ошибка при отправке в {target}: {e}")
 
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(1)  # Задержка между отправками
 
         except Exception as e:
             print(f"⚠️ Ошибка в NewMessage: {e}")
