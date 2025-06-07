@@ -1,14 +1,14 @@
 import os
 import asyncio
 from telethon import TelegramClient, events
-from telethon.errors import SessionPasswordNeededError
-import socks  # Для прокси
+import socks  # обязательно установленный пакет PySocks
 
 API_ID = 25293202
 API_HASH = '68a935aff803647b47acf3fb28a3d765'
 
 SESSION_DIR = 'sessions'
 SESSIONS_FILE = 'sessions.txt'
+PROXY_FILE = 'proxies.txt'  # файл с прокси, если хочешь использовать
 
 if not os.path.exists(SESSION_DIR):
     os.makedirs(SESSION_DIR)
@@ -33,22 +33,24 @@ def remove_invalid_session_from_file(phone):
 
 def load_proxies():
     proxies = []
-    if not os.path.exists('proxies.txt'):
+    if not os.path.exists(PROXY_FILE):
         return proxies
-    with open('proxies.txt', 'r') as f:
+    with open(PROXY_FILE, 'r') as f:
         for line in f:
             parts = line.strip().split(':')
             if len(parts) == 2:
                 ip, port = parts
                 proxy = (socks.SOCKS5, ip, int(port))
-                proxies.append(proxy)
             elif len(parts) == 4:
                 ip, port, user, pwd = parts
                 proxy = (socks.SOCKS5, ip, int(port), True, user, pwd)
-                proxies.append(proxy)
+            else:
+                continue
+            proxies.append(proxy)
     return proxies
 
 async def start_client(phone, proxy=None):
+    print(f"🔑 Запуск клиента для {phone} с прокси: {proxy}")
     session_file = os.path.join(SESSION_DIR, f"{phone.replace('+', '')}.session")
     if not os.path.exists(session_file):
         print(f"❌ Сессия не найдена: {phone}")
@@ -69,7 +71,7 @@ async def start_client(phone, proxy=None):
         return client
 
     except Exception as e:
-        print(f"⚠️ Ошибка при запуске клиента {phone}: {e}")
+        print(f"⚠️ Ошибка при запуске клиента {phone}: {type(e).__name__}: {e}")
         if os.path.exists(session_file):
             os.remove(session_file)
         remove_invalid_session_from_file(phone)
@@ -78,6 +80,7 @@ async def start_client(phone, proxy=None):
 async def main():
     with open(SESSIONS_FILE, "r") as f:
         phones = [line.strip() for line in f if line.strip()]
+    print(f"📋 Загружены телефоны: {phones}")
 
     with open("source_chat.txt", "r") as f:
         source_chat = int(f.read().strip())
@@ -86,10 +89,12 @@ async def main():
         target_chats = [int(line.strip()) for line in f if line.strip()]
 
     proxies = load_proxies()
+    print(f"🛡 Загружено прокси: {len(proxies)} шт.")
+
     clients = []
     for idx, phone in enumerate(phones):
-        proxy = proxies[idx // 10] if idx // 10 < len(proxies) else None
-        client = await start_client(f"+{phone}", proxy=proxy)
+        proxy = proxies[idx // 10] if proxies and idx // 10 < len(proxies) else None
+        client = await start_client(f"+{phone}", proxy)
         if client:
             clients.append(client)
 
@@ -142,7 +147,7 @@ async def main():
                     except Exception as e:
                         print(f"❌ Ошибка при отправке в {target}: {e}")
 
-                    await asyncio.sleep(1)  # Задержка между отправками
+                    await asyncio.sleep(1)  # задержка между чатами
 
         except Exception as e:
             print(f"⚠️ Ошибка в NewMessage: {e}")
