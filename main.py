@@ -1,62 +1,60 @@
 import os
 import asyncio
-from telethon import TelegramClient, events
 import socks
+from itertools import cycle
+from telethon import TelegramClient, events
+from telethon.errors import SessionPasswordNeededError
 
+# Конфигурация
 API_ID = 25293202
 API_HASH = '68a935aff803647b47acf3fb28a3d765'
-
 SESSION_DIR = 'sessions'
 SESSIONS_FILE = 'sessions.txt'
 PROXY_FILE = 'proxies.txt'
 
-if not os.path.exists(SESSION_DIR):
-    os.makedirs(SESSION_DIR)
-
-if not os.path.exists(SESSIONS_FILE):
-    with open(SESSIONS_FILE, 'w'):
-        pass
-
-if not os.path.exists(PROXY_FILE):
-    with open(PROXY_FILE, 'w'):
-        pass
+# Создаем необходимые файлы/директории
+os.makedirs(SESSION_DIR, exist_ok=True)
+for file in [SESSIONS_FILE, PROXY_FILE]:
+    if not os.path.exists(file):
+        open(file, 'w').close()
 
 message_map = {}
 
-def remove_invalid_session_from_file(phone):
-    try:
-        with open(SESSIONS_FILE, "r") as f:
-            lines = f.readlines()
-        with open(SESSIONS_FILE, "w") as f:
-            for line in lines:
-                if line.strip() != phone:
-                    f.write(line)
-        print(f"📤 Удалена поврежденная сессия: {phone}")
-    except Exception as e:
-        print(f"⚠️ Ошибка при удалении сессии: {e}")
-
 def load_proxies():
+    """Загружает прокси из файла в формате ip:port[:login:password]"""
     proxies = []
     with open(PROXY_FILE, 'r') as f:
         for line in f:
-            parts = line.strip().split(':')
+            line = line.strip()
+            if not line:
+                continue
+            
+            parts = line.split(':')
             if len(parts) == 2:
-                ip, port = parts
-                proxy = (socks.SOCKS5, ip, int(port))
+                proxy = (socks.SOCKS5, parts[0], int(parts[1]))
             elif len(parts) == 4:
-                ip, port, user, pwd = parts
-                proxy = (socks.SOCKS5, ip, int(port), True, user, pwd)
+                proxy = (socks.SOCKS5, parts[0], int(parts[1]), True, parts[2], parts[3])
             else:
                 continue
             proxies.append(proxy)
     return proxies
 
-async def start_client(phone, proxy=None):
-    session_file = os.path.join(SESSION_DIR, f"{phone.replace('+', '')}.session")
-    if not os.path.exists(session_file):
-        print(f"❌ Сессия не найдена: {phone}")
-        return None
+def remove_invalid_session(phone):
+    """Удаляет невалидный номер из sessions.txt"""
+    try:
+        with open(SESSIONS_FILE, "r+") as f:
+            lines = [line.strip() for line in f if line.strip() != phone]
+            f.seek(0)
+            f.write('\n'.join(lines))
+            f.truncate()
+        print(f"📤 Удалена сессия: {phone}")
+    except Exception as e:
+        print(f"⚠️ Ошибка при удалении сессии: {e}")
 
+async def start_client(phone, proxy):
+    """Запускает клиент с указанным прокси"""
+    session_file = os.path.join(SESSION_DIR, phone.replace('+', '') + '.session')
+    
     try:
         client = TelegramClient(session_file, API_ID, API_HASH, proxy=proxy)
         await client.connect()
@@ -64,147 +62,103 @@ async def start_client(phone, proxy=None):
         if not await client.is_user_authorized():
             print(f"❌ Сессия недействительна: {phone}")
             os.remove(session_file)
-            remove_invalid_session_from_file(phone)
+            remove_invalid_session(phone)
             return None
 
         me = await client.get_me()
-        print(f"✅ Клиент {phone} запущен как {me.first_name} (@{me.username})")
+        print(f"✅ {phone} запущен как {me.first_name} (@{me.username})")
         return client
 
     except Exception as e:
-        print(f"⚠️ Ошибка при запуске клиента {phone}: {type(e).__name__}: {e}")
+        print(f"⚠️ Ошибка при запуске {phone}: {e}")
         if os.path.exists(session_file):
             os.remove(session_file)
-        remove_invalid_session_from_file(phone)
+        remove_invalid_session(phone)
         return None
 
 async def main():
+    # Загрузка конфигурации
     with open(SESSIONS_FILE, "r") as f:
-        phones = [line.strip() for line in f if line.strip()]
-    print(f"📋 Загружены телефоны: {phones}")
-
-    with open("source_chat.txt", "r") as f:
+        phones = ['+' + line.strip() for line in f if line.strip()]
+    
+    with open("source_chat.txt") as f:
         source_chat = int(f.read().strip())
-
-    with open("target_chats.txt", "r") as f:
+    
+    with open("target_chats.txt") as f:
         target_chats = [int(line.strip()) for line in f if line.strip()]
 
+    # Настройка прокси
     proxies = load_proxies()
-    print(f"🛡 Загружено прокси: {len(proxies)} шт.")
+    proxy_cycle = cycle(proxies) if proxies else None
+    print(f"🛡 Загружено прокси: {len(proxies)}")
 
+    # Семафор для ограничения одновременных запросов
+    semaphore = asyncio.Semaphore(5)
+
+    # Запуск клиентов
     clients = []
-    for idx, phone in enumerate(phones):
-        proxy = proxies[idx // 10] if idx // 10 < len(proxies) else None
-        print(f"🔑 Запуск клиента для {phone} с прокси: {proxy}")
-        client = await start_client(f"+{phone}", proxy)
+    for i, phone in enumerate(phones):
+        proxy = proxy_cycle.__next__() if proxy_cycle else None
+        print(f"🔁 Подключаем {phone} через прокси: {proxy[:2] if proxy else 'нет'}")
+        
+        client = await start_client(phone, proxy)
         if client:
             clients.append(client)
-        await asyncio.sleep(3)  # Задержка между запуском клиентов
+        
+        # Задержка между подключениями
+        if i < len(phones) - 1:
+            await asyncio.sleep(3)
 
     if not clients:
-        print("❌ Нет активных клиентов.")
+        print("❌ Нет активных клиентов")
         return
 
-    print(f"✅ Активных клиентов: {len(clients)}")
+    print(f"🚀 Успешно запущено клиентов: {len(clients)}")
 
-    @events.register(events.NewMessage())
-    async def handler(event):
-        print(f"🔔 NewMessage event: chat_id={event.chat_id}")
-        try:
-            chat_id = event.chat_id
-            sender = await event.get_sender()
-            me = await event.client.get_me()
+    async def safe_send_message(client, target, message, reply_to=None):
+        """Безопасная отправка с ограничением частоты"""
+        async with semaphore:
+            try:
+                if message.media:
+                    sent = await client.send_file(target, message.media, 
+                                                caption=message.text,
+                                                reply_to=reply_to)
+                else:
+                    sent = await client.send_message(target, message.text,
+                                                   reply_to=reply_to)
+                
+                # Сохраняем ID сообщения для редактирования
+                if message.id not in message_map:
+                    message_map[message.id] = {}
+                message_map[message.id][target] = sent.id
+                
+                print(f"📨 {client.session.filename}: Отправлено в {target}")
+                await asyncio.sleep(1)  # Задержка между сообщениями
+                return sent
+            except Exception as e:
+                print(f"⚠️ Ошибка отправки: {e}")
+                await asyncio.sleep(5)  # Большая задержка при ошибке
+                return None
 
-            if chat_id == source_chat and sender.id == me.id:
-                message = event.message
-                print(f"📨 Новое сообщение, пересылаем...")
+    @events.register(events.NewMessage(chats=source_chat))
+    async def message_handler(event):
+        if event.sender_id == (await event.client.get_me()).id:
+            print(f"🔔 Новое сообщение для пересылки (ID: {event.message.id})")
+            
+            for target in target_chats:
+                reply_to = None
+                if event.message.reply_to_msg_id:
+                    original_reply = await event.message.get_reply_message()
+                    if original_reply and original_reply.id in message_map:
+                        reply_to = message_map[original_reply.id].get(target)
+                
+                await safe_send_message(event.client, target, event.message, reply_to)
 
-                for target in target_chats:
-                    try:
-                        reply_to = None
-                        if message.reply_to:
-                            replied = await message.get_reply_message()
-                            if replied:
-                                async for msg in event.client.iter_messages(target, search=replied.text):
-                                    if msg.text == replied.text:
-                                        reply_to = msg.id
-                                        break
-
-                        if message.media:
-                            sent_message = await event.client.send_file(
-                                target, message.media,
-                                caption=message.text or "",
-                                reply_to=reply_to
-                            )
-                        else:
-                            sent_message = await event.client.send_message(
-                                target, message.text,
-                                reply_to=reply_to
-                            )
-
-                        if message.id not in message_map:
-                            message_map[message.id] = {}
-                        message_map[message.id][target] = sent_message.id
-
-                        print(f"✅ Отправлено в чат {target}: ID {sent_message.id}")
-
-                    except Exception as e:
-                        print(f"❌ Ошибка при отправке в {target}: {type(e).__name__}: {e}")
-
-                    await asyncio.sleep(1)
-
-        except Exception as e:
-            print(f"⚠️ Ошибка в NewMessage: {type(e).__name__}: {e}")
-
-    @events.register(events.MessageEdited())
-    async def edit_handler(event):
-        print(f"✏️ MessageEdited event: chat_id={event.chat_id}")
-        try:
-            chat_id = event.chat_id
-            message_id = event.message.id
-            sender = await event.get_sender()
-            me = await event.client.get_me()
-
-            if chat_id == source_chat and sender.id == me.id:
-                if message_id in message_map:
-                    for target in target_chats:
-                        try:
-                            target_message_id = message_map[message_id].get(target)
-                            if target_message_id:
-                                await event.client.edit_message(target, target_message_id, event.message.text)
-                                print(f"✏️ Изменено в чате {target}")
-                        except Exception as e:
-                            print(f"❌ Ошибка редактирования в {target}: {type(e).__name__}: {e}")
-        except Exception as e:
-            print(f"⚠️ Ошибка в MessageEdited: {type(e).__name__}: {e}")
-
-    @events.register(events.MessageDeleted())
-    async def delete_handler(event):
-        print(f"🗑 MessageDeleted event: chat_id={event.chat_id}")
-        try:
-            chat_id = event.chat_id
-            deleted_ids = event.deleted_ids
-
-            if chat_id == source_chat:
-                for msg_id in deleted_ids:
-                    if msg_id in message_map:
-                        for target in target_chats:
-                            try:
-                                target_msg_id = message_map[msg_id].get(target)
-                                if target_msg_id:
-                                    await event.client.delete_messages(target, target_msg_id)
-                                    print(f"🗑 Удалено в чате {target}")
-                            except Exception as e:
-                                print(f"❌ Ошибка удаления в {target}: {type(e).__name__}: {e}")
-        except Exception as e:
-            print(f"⚠️ Ошибка в MessageDeleted: {type(e).__name__}: {e}")
-
+    # Регистрируем обработчики
     for client in clients:
-        client.add_event_handler(handler)
-        client.add_event_handler(edit_handler)
-        client.add_event_handler(delete_handler)
+        client.add_event_handler(message_handler)
 
-    print("👂 Ожидаем события...")
+    print("👂 Ожидаем сообщения...")
     await asyncio.gather(*[client.run_until_disconnected() for client in clients])
 
 if __name__ == '__main__':
