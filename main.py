@@ -1,21 +1,23 @@
 import os
 import asyncio
+import socks
 from telethon import TelegramClient, events
-import socks  # обязательно установленный пакет PySocks
 
 API_ID = 25293202
 API_HASH = '68a935aff803647b47acf3fb28a3d765'
 
 SESSION_DIR = 'sessions'
 SESSIONS_FILE = 'sessions.txt'
-PROXY_FILE = 'proxies.txt'  # файл с прокси, если хочешь использовать
+PROXY_FILE = 'proxies.txt'
 
 if not os.path.exists(SESSION_DIR):
     os.makedirs(SESSION_DIR)
 
 if not os.path.exists(SESSIONS_FILE):
-    with open(SESSIONS_FILE, 'w'):
-        pass
+    open(SESSIONS_FILE, 'w').close()
+
+if not os.path.exists(PROXY_FILE):
+    open(PROXY_FILE, 'w').close()
 
 message_map = {}
 
@@ -33,8 +35,6 @@ def remove_invalid_session_from_file(phone):
 
 def load_proxies():
     proxies = []
-    if not os.path.exists(PROXY_FILE):
-        return proxies
     with open(PROXY_FILE, 'r') as f:
         for line in f:
             parts = line.strip().split(':')
@@ -50,7 +50,6 @@ def load_proxies():
     return proxies
 
 async def start_client(phone, proxy=None):
-    print(f"🔑 Запуск клиента для {phone} с прокси: {proxy}")
     session_file = os.path.join(SESSION_DIR, f"{phone.replace('+', '')}.session")
     if not os.path.exists(session_file):
         print(f"❌ Сессия не найдена: {phone}")
@@ -59,10 +58,12 @@ async def start_client(phone, proxy=None):
     try:
         client = TelegramClient(session_file, API_ID, API_HASH, proxy=proxy)
         await client.connect()
+        print(f"🔄 Подключение выполнено для {phone}")
 
         if not await client.is_user_authorized():
             print(f"❌ Сессия недействительна: {phone}")
-            os.remove(session_file)
+            if os.path.exists(session_file):
+                os.remove(session_file)
             remove_invalid_session_from_file(phone)
             return None
 
@@ -71,7 +72,7 @@ async def start_client(phone, proxy=None):
         return client
 
     except Exception as e:
-        print(f"⚠️ Ошибка при запуске клиента {phone}: {type(e).__name__}: {e}")
+        print(f"⚠️ Ошибка при запуске клиента {phone}: {e}")
         if os.path.exists(session_file):
             os.remove(session_file)
         remove_invalid_session_from_file(phone)
@@ -82,18 +83,25 @@ async def main():
         phones = [line.strip() for line in f if line.strip()]
     print(f"📋 Загружены телефоны: {phones}")
 
+    with open(PROXY_FILE, "r") as f:
+        proxy_list = [line.strip() for line in f if line.strip()]
+    print(f"🛡 Загружено прокси: {len(proxy_list)} шт.")
+
+    proxies = load_proxies()
+
     with open("source_chat.txt", "r") as f:
         source_chat = int(f.read().strip())
 
     with open("target_chats.txt", "r") as f:
         target_chats = [int(line.strip()) for line in f if line.strip()]
 
-    proxies = load_proxies()
-    print(f"🛡 Загружено прокси: {len(proxies)} шт.")
-
     clients = []
     for idx, phone in enumerate(phones):
-        proxy = proxies[idx // 10] if proxies and idx // 10 < len(proxies) else None
+        proxy = proxies[idx // 10] if idx // 10 < len(proxies) else None
+        if proxy:
+            print(f"🔑 Запуск клиента для +{phone} с прокси: {proxy}")
+        else:
+            print(f"🔑 Запуск клиента для +{phone} без прокси")
         client = await start_client(f"+{phone}", proxy)
         if client:
             clients.append(client)
@@ -147,7 +155,7 @@ async def main():
                     except Exception as e:
                         print(f"❌ Ошибка при отправке в {target}: {e}")
 
-                    await asyncio.sleep(1)  # задержка между чатами
+                    await asyncio.sleep(1)
 
         except Exception as e:
             print(f"⚠️ Ошибка в NewMessage: {e}")
