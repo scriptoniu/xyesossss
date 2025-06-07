@@ -19,15 +19,15 @@ SESSION_DIR = 'sessions'
 SESSIONS_FILE = 'sessions.txt'
 PROXY_FILE = 'proxies.txt'
 
-# Настройка логирования
+# Настройка логирования в консоль
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    filename='bot_errors.log'
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
-class TelegramLogger:
+class ErrorLogger:
     _instance = None
 
     def __new__(cls):
@@ -37,18 +37,22 @@ class TelegramLogger:
         return cls._instance
 
     async def initialize(self):
-        self.client = TelegramClient('logger_session', API_ID, API_HASH)
-        await self.client.start(bot_token=LOG_BOT_TOKEN)
-
-    async def send_log(self, message):
         try:
-            if self.client:
-                await self.client.send_message(LOG_CHAT_ID, message)
+            self.client = TelegramClient('error_logger', API_ID, API_HASH)
+            await self.client.start(bot_token=LOG_BOT_TOKEN)
+            logger.info("Логгер ошибок инициализирован")
         except Exception as e:
-            logger.error(f"Ошибка отправки лога: {e}")
+            logger.error(f"Ошибка инициализации логгера: {e}")
 
-async def setup_logger():
-    logger_instance = TelegramLogger()
+    async def log_error(self, error_message):
+        try:
+            if self.client and self.client.is_connected():
+                await self.client.send_message(LOG_CHAT_ID, error_message)
+        except Exception as e:
+            logger.error(f"Не удалось отправить ошибку в Telegram: {e}")
+
+async def setup_error_logger():
+    logger_instance = ErrorLogger()
     await logger_instance.initialize()
     return logger_instance
 
@@ -74,10 +78,11 @@ async def load_proxies():
                     continue
                 proxies.append(proxy)
             except (ValueError, IndexError) as e:
-                logger.error(f"Ошибка парсинга прокси: {line} - {e}")
+                error_msg = f"Ошибка парсинга прокси {line}: {e}"
+                logger.error(error_msg)
     return proxies
 
-async def start_client(phone, proxy, logger_instance):
+async def start_client(phone, proxy, error_logger):
     """Запускает клиент с обработкой ошибок"""
     session_file = os.path.join(SESSION_DIR, phone.replace('+', '') + '.session')
     
@@ -86,25 +91,23 @@ async def start_client(phone, proxy, logger_instance):
         await client.connect()
 
         if not await client.is_user_authorized():
-            error_msg = f"❌ Сессия недействительна: {phone}"
-            await logger_instance.send_log(error_msg)
+            error_msg = f"Сессия недействительна: {phone}"
             logger.error(error_msg)
+            await error_logger.log_error(f"❌ {error_msg}")
             return None
 
         me = await client.get_me()
-        success_msg = f"✅ {phone} запущен как @{me.username}"
-        await logger_instance.send_log(success_msg)
-        logger.info(success_msg)
+        logger.info(f"[{phone} запущен как @{me.username}]")
         return client
 
     except Exception as e:
-        error_msg = f"⚠️ Ошибка подключения {phone}: {type(e).__name__} - {str(e)}"
-        await logger_instance.send_log(error_msg)
+        error_msg = f"Ошибка подключения {phone}: {type(e).__name__} - {str(e)}"
         logger.error(error_msg)
+        await error_logger.log_error(f"⚠️ {error_msg}")
         return None
 
-async def safe_send_message(client, target, message, reply_to, logger_instance):
-    """Безопасная отправка сообщения с обработкой ошибок"""
+async def safe_send_message(client, target, message, reply_to, error_logger):
+    """Безопасная отправка сообщения"""
     try:
         if message.media:
             sent = await client.send_file(
@@ -120,20 +123,20 @@ async def safe_send_message(client, target, message, reply_to, logger_instance):
                 reply_to=reply_to
             )
         
-        logger.info(f"📨 Сообщение {message.id} отправлено в {target}")
+        logger.info(f"Отправлено в чат {target}: ID {sent.id}")
         await asyncio.sleep(1)  # Задержка 1 секунда
         return sent
     except Exception as e:
-        error_msg = f"⚠️ Ошибка отправки в {target}: {type(e).__name__} - {str(e)}"
-        await logger_instance.send_log(error_msg)
+        error_msg = f"Ошибка отправки в {target}: {type(e).__name__} - {str(e)}"
         logger.error(error_msg)
-        await asyncio.sleep(3)  # Увеличенная задержка при ошибке
+        await error_logger.log_error(f"⚠️ {error_msg}")
+        await asyncio.sleep(3)
         return None
 
 async def main():
-    # Инициализация логгера
-    logger_instance = await setup_logger()
-    await logger_instance.send_log("🟢 Бот запущен")
+    # Инициализация логгера ошибок
+    error_logger = await setup_error_logger()
+    await error_logger.log_error("🟢 Бот запущен")
 
     # Проверка файлов
     os.makedirs(SESSION_DIR, exist_ok=True)
@@ -152,38 +155,34 @@ async def main():
         with open("target_chats.txt") as f:
             target_chats = [int(line.strip()) for line in f if line.strip()]
     except Exception as e:
-        error_msg = f"❌ Ошибка загрузки конфигурации: {e}"
-        await logger_instance.send_log(error_msg)
+        error_msg = f"Ошибка загрузки конфигурации: {e}"
         logger.error(error_msg)
+        await error_logger.log_error(f"❌ {error_msg}")
         return
 
     # Загрузка прокси
     proxies = await load_proxies()
     proxy_cycle = cycle(proxies) if proxies else None
-    proxy_info = f"🛡 Загружено прокси: {len(proxies)}" if proxies else "🛡 Прокси не используются"
-    await logger_instance.send_log(proxy_info)
-    logger.info(proxy_info)
+    logger.info(f"[Загружено прокси: {len(proxies)}]")
 
     # Запуск клиентов
     clients = []
     for i, phone in enumerate(phones):
         proxy = next(proxy_cycle) if proxy_cycle else None
-        logger.info(f"🔁 Подключаем {phone} через прокси: {proxy[:2] if proxy else 'нет'}")
+        logger.info(f"Подключаем {phone} через прокси: {proxy[:2] if proxy else 'нет'}")
         
-        client = await start_client(phone, proxy, logger_instance)
+        client = await start_client(phone, proxy, error_logger)
         if client:
             clients.append(client)
             await asyncio.sleep(3)  # Задержка между подключениями
 
     if not clients:
-        error_msg = "❌ Нет активных клиентов"
-        await logger_instance.send_log(error_msg)
+        error_msg = "Нет активных клиентов"
         logger.error(error_msg)
+        await error_logger.log_error(f"❌ {error_msg}")
         return
 
-    success_msg = f"🚀 Успешно запущено клиентов: {len(clients)}"
-    await logger_instance.send_log(success_msg)
-    logger.info(success_msg)
+    logger.info(f"[Успешно запущено клиентов: {len(clients)}]")
 
     message_map = {}
 
@@ -192,7 +191,7 @@ async def main():
         try:
             me = await event.client.get_me()
             if event.sender_id == me.id:
-                logger.info(f"🔔 Новое сообщение для пересылки (ID: {event.message.id})")
+                logger.info(f"Новое сообщение для пересылки (ID: {event.message.id})")
                 
                 for target in target_chats:
                     reply_to = None
@@ -206,7 +205,7 @@ async def main():
                         target,
                         event.message,
                         reply_to,
-                        logger_instance
+                        error_logger
                     )
                     
                     if sent_message:
@@ -214,25 +213,24 @@ async def main():
                             message_map[event.message.id] = {}
                         message_map[event.message.id][target] = sent_message.id
         except Exception as e:
-            error_msg = f"⚠️ Ошибка в обработчике сообщений: {type(e).__name__} - {str(e)}"
-            await logger_instance.send_log(error_msg)
+            error_msg = f"Ошибка в обработчике сообщений: {type(e).__name__} - {str(e)}"
             logger.error(error_msg)
+            await error_logger.log_error(f"⚠️ {error_msg}")
 
     # Регистрация обработчиков
     for client in clients:
         client.add_event_handler(message_handler)
 
-    logger.info("👂 Ожидаем сообщения...")
-    await logger_instance.send_log("👂 Бот готов к работе")
+    logger.info("Ожидаем сообщения...")
 
     try:
         await asyncio.gather(*[client.run_until_disconnected() for client in clients])
     except Exception as e:
-        error_msg = f"🆘 Критическая ошибка: {type(e).__name__} - {str(e)}"
-        await logger_instance.send_log(error_msg)
+        error_msg = f"Критическая ошибка: {type(e).__name__} - {str(e)}"
         logger.critical(error_msg)
+        await error_logger.log_error(f"🆘 {error_msg}")
     finally:
-        await logger_instance.send_log("🔴 Бот остановлен")
+        await error_logger.log_error("🔴 Бот остановлен")
         logger.info("Бот остановлен")
 
 if __name__ == '__main__':
