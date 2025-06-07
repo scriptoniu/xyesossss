@@ -18,8 +18,9 @@ LOG_CHAT_ID = int(os.getenv('LOG_CHAT_ID'))
 SESSION_DIR = 'sessions'
 SESSIONS_FILE = 'sessions.txt'
 PROXY_FILE = 'proxies.txt'
+DB_LOCK_RETRY_DELAY = 5  # Задержка при блокировке базы (секунды)
 
-# Настройка логирования в консоль
+# Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -28,19 +29,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class ErrorLogger:
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance.client = None
-        return cls._instance
+    def __init__(self):
+        self.client = None
 
     async def initialize(self):
         try:
             self.client = TelegramClient('error_logger', API_ID, API_HASH)
             await self.client.start(bot_token=LOG_BOT_TOKEN)
-            logger.info("Логгер ошибок инициализирован")
+            logger.info("[Логгер ошибок инициализирован]")
         except Exception as e:
             logger.error(f"Ошибка инициализации логгера: {e}")
 
@@ -50,11 +46,6 @@ class ErrorLogger:
                 await self.client.send_message(LOG_CHAT_ID, error_message)
         except Exception as e:
             logger.error(f"Не удалось отправить ошибку в Telegram: {e}")
-
-async def setup_error_logger():
-    logger_instance = ErrorLogger()
-    await logger_instance.initialize()
-    return logger_instance
 
 async def load_proxies():
     """Загружает прокси из файла"""
@@ -78,33 +69,44 @@ async def load_proxies():
                     continue
                 proxies.append(proxy)
             except (ValueError, IndexError) as e:
-                error_msg = f"Ошибка парсинга прокси {line}: {e}"
-                logger.error(error_msg)
+                logger.error(f"Ошибка парсинга прокси {line}: {e}")
     return proxies
 
-async def start_client(phone, proxy, error_logger):
-    """Запускает клиент с обработкой ошибок"""
+async def start_client(phone, proxy, error_logger, retry_count=3):
+    """Запускает клиент с обработкой ошибок и повторными попытками"""
     session_file = os.path.join(SESSION_DIR, phone.replace('+', '') + '.session')
     
-    try:
-        client = TelegramClient(session_file, API_ID, API_HASH, proxy=proxy)
-        await client.connect()
+    for attempt in range(retry_count):
+        try:
+            client = TelegramClient(session_file, API_ID, API_HASH, proxy=proxy)
+            await client.connect()
 
-        if not await client.is_user_authorized():
-            error_msg = f"Сессия недействительна: {phone}"
+            if not await client.is_user_authorized():
+                error_msg = f"Сессия недействительна: {phone}"
+                logger.error(error_msg)
+                await error_logger.log_error(f"❌ {error_msg}")
+                return None
+
+            me = await client.get_me()
+            logger.info(f"[{phone} запущен как @{me.username}]")
+            return client
+
+        except Exception as e:
+            if "database is locked" in str(e):
+                if attempt < retry_count - 1:
+                    logger.warning(f"Блокировка базы ({phone}), попытка {attempt + 1}/{retry_count}...")
+                    await asyncio.sleep(DB_LOCK_RETRY_DELAY)
+                    continue
+                
+                error_msg = f"Блокировка базы для {phone} после {retry_count} попыток"
+                logger.error(error_msg)
+                await error_logger.log_error(f"⚠️ {error_msg}")
+                return None
+            
+            error_msg = f"Ошибка подключения {phone}: {type(e).__name__} - {str(e)}"
             logger.error(error_msg)
-            await error_logger.log_error(f"❌ {error_msg}")
+            await error_logger.log_error(f"⚠️ {error_msg}")
             return None
-
-        me = await client.get_me()
-        logger.info(f"[{phone} запущен как @{me.username}]")
-        return client
-
-    except Exception as e:
-        error_msg = f"Ошибка подключения {phone}: {type(e).__name__} - {str(e)}"
-        logger.error(error_msg)
-        await error_logger.log_error(f"⚠️ {error_msg}")
-        return None
 
 async def safe_send_message(client, target, message, reply_to, error_logger):
     """Безопасная отправка сообщения"""
@@ -123,7 +125,7 @@ async def safe_send_message(client, target, message, reply_to, error_logger):
                 reply_to=reply_to
             )
         
-        logger.info(f"Отправлено в чат {target}: ID {sent.id}")
+        logger.info(f"[Отправлено в чат {target}: ID {sent.id}]")
         await asyncio.sleep(1)  # Задержка 1 секунда
         return sent
     except Exception as e:
@@ -135,7 +137,8 @@ async def safe_send_message(client, target, message, reply_to, error_logger):
 
 async def main():
     # Инициализация логгера ошибок
-    error_logger = await setup_error_logger()
+    error_logger = ErrorLogger()
+    await error_logger.initialize()
     await error_logger.log_error("🟢 Бот запущен")
 
     # Проверка файлов
@@ -165,16 +168,21 @@ async def main():
     proxy_cycle = cycle(proxies) if proxies else None
     logger.info(f"[Загружено прокси: {len(proxies)}]")
 
-    # Запуск клиентов
+    # Запуск клиентов с ограничением одновременных подключений
     clients = []
-    for i, phone in enumerate(phones):
-        proxy = next(proxy_cycle) if proxy_cycle else None
-        logger.info(f"Подключаем {phone} через прокси: {proxy[:2] if proxy else 'нет'}")
-        
-        client = await start_client(phone, proxy, error_logger)
-        if client:
-            clients.append(client)
-            await asyncio.sleep(3)  # Задержка между подключениями
+    semaphore = asyncio.Semaphore(3)  # Макс 3 одновременных подключения
+
+    async def connect_account(phone):
+        async with semaphore:
+            proxy = next(proxy_cycle) if proxy_cycle else None
+            logger.info(f"Подключаем {phone} через прокси: {proxy[:2] if proxy else 'нет'}")
+            
+            client = await start_client(phone, proxy, error_logger)
+            if client:
+                clients.append(client)
+            await asyncio.sleep(2)  # Задержка между подключениями
+
+    await asyncio.gather(*[connect_account(phone) for phone in phones])
 
     if not clients:
         error_msg = "Нет активных клиентов"
