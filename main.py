@@ -3,7 +3,6 @@ import asyncio
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
 from telethon.sessions import StringSession
-from telethon.network.connection.tcpmtproxy import ConnectionTcpMTProxy
 import socks
 
 API_ID = 25293202
