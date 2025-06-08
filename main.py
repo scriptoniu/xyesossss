@@ -161,7 +161,7 @@ async def main():
                         print(f"✅ Отправлено в чат {target}: ID {sent_message.id}")
                     except Exception as e:
                         print(f"❌ Ошибка при отправке в {target}: {e}")
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.3)
 
         except Exception as e:
             print(f"⚠️ Ошибка в NewMessage: {e}")
