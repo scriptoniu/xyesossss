@@ -9,7 +9,7 @@ from aiogram.enums import ParseMode
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = "YOUR_BOT_TOKEN"  # Замените на реальный токен!
+BOT_TOKEN = "7755541704:AAHINZn-mtLddqc7RJV1VHCpE6AbAzwAAuI"  # Замените на реальный токен!
 ADMIN_ID = 7091921882         # Ваш Telegram ID
 CHATS_FILE = "chats.txt"      # Формат: "ID_чата Название_чата"
 IGNORED_USERS_FILE = "ignored_users.txt"  # ID пользователей (по одному на строку)
