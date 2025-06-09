@@ -4,18 +4,23 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
+from aiogram.client.default import DefaultBotProperties  # ← добавлено
 
 # Настройки
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = "7755541704:AAHINZn-mtLddqc7RJV1VHCpE6AbAzwAAuI"  # Замените на реальный токен!
-ADMIN_ID = 7091921882         # Ваш Telegram ID
-CHATS_FILE = "chats.txt"      # Формат: "ID_чата Название_чата"
-IGNORED_USERS_FILE = "ignored_users.txt"  # ID пользователей (по одному на строку)
-TRACKING_ENABLED = True       # Отслеживание включено по умолчанию
+BOT_TOKEN = "7755541704:AAHINZn-mtLddqc7RJV1VHCpE6AbAzwAAuI"
+ADMIN_ID = 7091921882
+CHATS_FILE = "chats.txt"
+IGNORED_USERS_FILE = "ignored_users.txt"
+TRACKING_ENABLED = True
 
-bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
+# ✅ исправлено: parse_mode теперь указывается через DefaultBotProperties
+bot = Bot(
+    token=BOT_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
 dp = Dispatcher()
 
 # ========================
