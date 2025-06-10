@@ -179,24 +179,42 @@ async def process_callback(callback: types.CallbackQuery):
 
     chats = load_chats()
     data = callback.data
+    updated_count = 0
+    total_attempted = 0
 
     try:
         if data in ["open_all", "close_all"]:
             # Массовое открытие/закрытие чатов
             is_open = data == "open_all"
             for chat_id in chats:
-                chats[chat_id]["is_open"] = is_open
-                await set_chat_permissions(int(chat_id), is_open)
-            await callback.answer(f"Все чаты {'открыты' if is_open else 'закрыты'}")
+                total_attempted += 1
+                try:
+                    member = await bot.get_chat_member(chat_id=int(chat_id), user_id=bot.id)
+                    if member.status in ["administrator", "creator"]:
+                        chats[chat_id]["is_open"] = is_open
+                        await set_chat_permissions(int(chat_id), is_open)
+                        updated_count += 1
+                except Exception as e:
+                    logger.warning(f"Не удалось изменить чат {chat_id}: {e}")
+
+            await callback.answer(f"✅ {updated_count}/{total_attempted} чатов {'открыто' if is_open else 'закрыто'}")
 
         elif data.startswith("toggle:"):
             # Переключение конкретного чата
             chat_id = data.split(":")[1]
             if chat_id in chats:
-                is_open = not chats[chat_id]["is_open"]
-                chats[chat_id]["is_open"] = is_open
-                await set_chat_permissions(int(chat_id), is_open)
-                await callback.answer(f"Чат {'открыт' if is_open else 'закрыт'}")
+                try:
+                    member = await bot.get_chat_member(chat_id=int(chat_id), user_id=bot.id)
+                    if member.status in ["administrator", "creator"]:
+                        is_open = not chats[chat_id]["is_open"]
+                        chats[chat_id]["is_open"] = is_open
+                        await set_chat_permissions(int(chat_id), is_open)
+                        await callback.answer(f"Чат {'открыт' if is_open else 'закрыт'}")
+                    else:
+                        await callback.answer("❌ Нет прав администратора")
+                except Exception as e:
+                    logger.warning(f"Ошибка в toggle-чате {chat_id}: {e}")
+                    await callback.answer("❌ Не удалось изменить чат")
 
         # Обновляем сообщение с кнопками
         await cmd_manage(callback.message)
