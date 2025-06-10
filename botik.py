@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = "7755541704:AAHINZn-mtLddqc7RJV1VHCpE6AbAzwAAuI"
 ADMIN_ID = 7091921882
-CHATS_FILE = "chats.txt"
+CHATS_FILE = "target_chats.txt"
 IGNORED_USERS_FILE = "ignored_users.txt"
 TRACKING_ENABLED = True
 
@@ -85,7 +85,7 @@ async def cmd_start(message: types.Message):
         "🔹 <code>/manage</code> - управление доступом\n"
         "🔹 <code>/tracking</code> - вкл/выкл отслеживание\n"
         "🔹 <code>/ignored</code> - список игнорируемых\n\n"
-        "ℹ️ Чаты добавляются вручную в <code>chats.txt</code>",
+        "ℹ️ Чаты добавляются вручную в <code>target_chats.txt</code>",
         parse_mode=ParseMode.HTML
     )
 
