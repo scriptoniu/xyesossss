@@ -222,7 +222,7 @@ async def track_message(message: types.Message):
     if not TRACKING_ENABLED:
         return
 
-    if (not await is_admin(message.from_user.id) and str(message.from_user.id) not in load_ignored_users():
+    if not await is_admin(message.from_user.id) and str(message.from_user.id) not in load_ignored_users():
         chat_id = str(message.chat.id)
         chats = load_chats()
         
