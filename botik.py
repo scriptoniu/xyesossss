@@ -200,67 +200,58 @@ async def process_callback(callback: types.CallbackQuery):
 
 # ======== Трекинг сообщений ========
 @dp.message()
-@dp.message()
 async def track_message(message: types.Message):
     if not TRACKING_ENABLED:
         return
 
-    # Пропускаем анонимных админов (пишущих от имени группы)
-    if message.sender_chat and message.sender_chat.type in ("group", "supergroup"):
+    # Пропускаем сообщения от имени чата (анонимные админы и каналы)
+    if message.sender_chat and message.sender_chat.id != message.chat.id:
         return
 
+    # Пропускаем, если нет информации о пользователе
     if message.from_user is None:
-        return  # на всякий случай, хотя выше уже отсеяны
+        return
 
     user_id = str(message.from_user.id)
     chat_id = str(message.chat.id)
 
+    # Пропускаем, если не отслеживаемый чат
+    if chat_id not in load_chats():
+        return
+
+    # Пропускаем админов
     if await is_admin(user_id):
         return
 
+    # Пропускаем пользователей из игноров
     if user_id in load_ignored_users():
         return
 
-    if chat_id not in load_chats():
-        return
-    # дальнейшая логика...
+    # === ОСНОВНАЯ ЛОГИКА ===
+    user = message.from_user
+    chat = message.chat
 
-    if (
-        not await is_admin(message.from_user.id) and
-        str(message.from_user.id) not in load_ignored_users() and
-        str(message.chat.id) in load_chats()
-    ):
-        user = message.from_user
-        chat = message.chat
+    try:
+        if chat.username:
+            message_link = f"https://t.me/{chat.username}/{message.message_id}"
+        elif str(chat.id).startswith("-100"):
+            channel_id = str(chat.id)[4:]
+            message_link = f"https://t.me/c/{channel_id}/{message.message_id}"
+        else:
+            message_link = f"tg://openmessage?chat_id={chat.id}&message_id={message.message_id}"
+    except Exception:
+        message_link = "Не удалось создать ссылку"
 
-        try:
-            if chat.username:
-                message_link = f"https://t.me/{chat.username}/{message.message_id}"
-            elif str(chat.id).startswith("-100"):
-                channel_id = str(chat.id)[4:]
-                message_link = f"https://t.me/c/{channel_id}/{message.message_id}"
-            else:
-                message_link = f"tg://openmessage?chat_id={chat.id}&message_id={message.message_id}"
-        except Exception as e:
-            logger.error(f"Ошибка генерации ссылки: {e}")
-            message_link = "Не удалось создать ссылку"
+    text = (
+        f"📨 <b>Новое сообщение</b>\n"
+        f"👤 <b>От:</b> {user.full_name} (@{user.username or 'нет'})\n"
+        f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
+        f"💬 <b>Чат:</b> {chat.title or 'Без названия'}\n"
+        f"🔗 <a href='{message_link}'>Ссылка на сообщение</a>\n\n"
+        f"📝 <b>Текст:</b>\n<code>{message.text or 'Медиа-сообщение'}</code>"
+    )
 
-        text = (
-            f"📨 <b>Новое сообщение</b>\n"
-            f"👤 <b>От:</b> {user.full_name} (@{user.username or 'нет'})\n"
-            f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
-            f"💬 <b>Чат:</b> {chat.title or 'Без названия'}\n"
-            f"🔗 <a href='{message_link}'>Ссылка на сообщение</a>\n\n"
-            f"📝 <b>Текст:</b>\n<code>{message.text or 'Медиа-сообщение'}</code>"
-        )
-
-        try:
-            await bot.send_message(
-                ADMIN_ID,
-                text,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True
-            )
+    await bot.send_message(ADMIN_ID, text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         except Exception as e:
             logger.error(f"Ошибка отправки администратору: {e}")
 
