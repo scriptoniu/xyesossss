@@ -200,9 +200,30 @@ async def process_callback(callback: types.CallbackQuery):
 
 # ======== Трекинг сообщений ========
 @dp.message()
+@dp.message()
 async def track_message(message: types.Message):
     if not TRACKING_ENABLED:
         return
+
+    # Пропускаем анонимных админов (пишущих от имени группы)
+    if message.sender_chat and message.sender_chat.type in ("group", "supergroup"):
+        return
+
+    if message.from_user is None:
+        return  # на всякий случай, хотя выше уже отсеяны
+
+    user_id = str(message.from_user.id)
+    chat_id = str(message.chat.id)
+
+    if await is_admin(user_id):
+        return
+
+    if user_id in load_ignored_users():
+        return
+
+    if chat_id not in load_chats():
+        return
+    # дальнейшая логика...
 
     if (
         not await is_admin(message.from_user.id) and
