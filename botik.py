@@ -230,34 +230,47 @@ async def track_message(message: types.Message):
         return
 
     # Проверяем права и игнор-лист
-    if (not await is_admin(message.from_user.id) and 
-        str(message.from_user.id) not in load_ignored_users() and
-        str(message.chat.id) in load_chats()):
+    if (not await is_admin(message.from_user.id) and \
+       str(message.from_user.id) not in load_ignored_users() and \
+       str(message.chat.id) in load_chats():
 
         user = message.from_user
         chat = message.chat
         
-        # Формируем ссылку на сообщение
-        if chat.username:
-            message_link = f"https://t.me/{chat.username}/{message.message_id}"
-        else:
-            message_link = (
-                f"https://t.me/c/{str(abs(chat.id))[4:]}/{message.message_id}"
-                if str(chat.id).startswith("-100")
-                else f"chat_id: {chat.id}"
-            )
+        # Правильная генерация ссылки для любого типа чата
+        try:
+            if chat.username:
+                # Для публичных чатов с username
+                message_link = f"https://t.me/{chat.username}/{message.message_id}"
+            else:
+                # Для приватных чатов и супергрупп
+                if str(chat.id).startswith("-100"):
+                    # Супергруппы и каналы
+                    channel_id = str(chat.id)[4:]
+                    message_link = f"https://t.me/c/{channel_id}/{message.message_id}"
+                else:
+                    # Личные чаты и небольшие группы
+                    message_link = f"tg://openmessage?chat_id={chat.id}&message_id={message.message_id}"
+        except Exception as e:
+            logger.error(f"Ошибка генерации ссылки: {e}")
+            message_link = "Не удалось создать ссылку"
 
-        # Отправляем уведомление
-        await bot.send_message(
-            ADMIN_ID,
-            f"📨 <b>Новое сообщение</b>\n"
-            f"👤 <b>От:</b> {user.full_name} (@{user.username or 'нет'})\n"
-            f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
-            f"💬 <b>Чат:</b> {chat.title}\n"
-            f"🔗 <a href='{message_link}'>Ссылка на сообщение</a>\n\n"
-            f"📝 <b>Текст:</b>\n<code>{message.text or 'Медиа-сообщение'}</code>",
-            parse_mode=ParseMode.HTML
-        )
+        # Отправляем уведомление всем админам
+        for admin_id in ADMIN_ID:
+            try:
+                await bot.send_message(
+                    admin_id,
+                    f"📨 <b>Новое сообщение</b>\n"
+                    f"👤 <b>От:</b> {user.full_name} (@{user.username or 'нет'})\n"
+                    f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
+                    f"💬 <b>Чат:</b> {chat.title or 'Без названия'}\n"
+                    f"🔗 <a href='{message_link}'>Ссылка на сообщение</a>\n\n"
+                    f"📝 <b>Текст:</b>\n<code>{message.text or 'Медиа-сообщение'}</code>",
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=True
+                )
+            except Exception as e:
+                logger.error(f"Не удалось отправить уведомление admin {admin_id}: {e}")
 
 # ========
 # Запуск
