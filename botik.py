@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties  # ← добавлено
+from aiogram.client.default import DefaultBotProperties
 
 # Настройки
 logging.basicConfig(level=logging.INFO)
@@ -16,33 +16,26 @@ CHATS_FILE = "target_chats.txt"
 IGNORED_USERS_FILE = "ignored_users.txt"
 TRACKING_ENABLED = True
 
-# ✅ исправлено: parse_mode теперь указывается через DefaultBotProperties
-bot = Bot(
-    token=BOT_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# ========================
-# Функции работы с файлами
-# ========================
+# ======== Работа с файлами ========
 def load_chats():
-    """Загружает список чатов из файла"""
     try:
         with open(CHATS_FILE, "r", encoding="utf-8") as f:
-            return {line.split()[0]: {"name": " ".join(line.split()[1:]), "is_open": True} 
-                   for line in f if line.strip()}
+            return {
+                line.split()[0]: {"name": " ".join(line.split()[1:]), "is_open": True}
+                for line in f if line.strip()
+            }
     except FileNotFoundError:
         return {}
 
 def save_chats(chats):
-    """Сохраняет чаты в файл"""
     with open(CHATS_FILE, "w", encoding="utf-8") as f:
         for chat_id, info in chats.items():
             f.write(f"{chat_id} {info['name']}\n")
 
 def load_ignored_users():
-    """Загружает список игнорируемых пользователей"""
     try:
         with open(IGNORED_USERS_FILE, "r") as f:
             return [line.strip() for line in f if line.strip()]
@@ -50,16 +43,13 @@ def load_ignored_users():
         return []
 
 def save_ignored_users(users):
-    """Сохраняет игнорируемых пользователей"""
     with open(IGNORED_USERS_FILE, "w") as f:
         f.write("\n".join(users))
 
 async def is_admin(user_id):
-    """Проверяет, является ли пользователь администратором"""
     return str(user_id) == str(ADMIN_ID)
 
 async def set_chat_permissions(chat_id, is_open):
-    """Устанавливает права чата"""
     await bot.set_chat_permissions(
         chat_id,
         types.ChatPermissions(
@@ -70,15 +60,11 @@ async def set_chat_permissions(chat_id, is_open):
         )
     )
 
-# =================
-# Команды бота
-# =================
+# ======== Команды ========
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    """Обработчик команды /start"""
     if not await is_admin(message.from_user.id):
         return
-    
     await message.reply(
         "🤖 <b>Бот управления чатами</b>\n\n"
         "🔹 <code>/chats</code> - список чатов\n"
@@ -91,10 +77,8 @@ async def cmd_start(message: types.Message):
 
 @dp.message(Command("chats"))
 async def cmd_chats(message: types.Message):
-    """Показывает список чатов"""
     if not await is_admin(message.from_user.id):
         return
-
     chats = load_chats()
     if not chats:
         await message.reply("📭 Список чатов пуст")
@@ -108,7 +92,6 @@ async def cmd_chats(message: types.Message):
 
 @dp.message(Command("manage"))
 async def cmd_manage(message: types.Message):
-    """Управление доступом в чатах"""
     if not await is_admin(message.from_user.id):
         return
 
@@ -117,7 +100,6 @@ async def cmd_manage(message: types.Message):
         await message.reply("Нет добавленных чатов")
         return
 
-    # Создаем клавиатуру
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🔓 Открыть все", callback_data="open_all"),
@@ -142,7 +124,6 @@ async def cmd_manage(message: types.Message):
 
 @dp.message(Command("tracking"))
 async def cmd_tracking(message: types.Message):
-    """Включает/выключает отслеживание"""
     if not await is_admin(message.from_user.id):
         return
 
@@ -153,7 +134,6 @@ async def cmd_tracking(message: types.Message):
 
 @dp.message(Command("ignored"))
 async def cmd_ignored(message: types.Message):
-    """Показывает игнорируемых пользователей"""
     if not await is_admin(message.from_user.id):
         return
 
@@ -167,12 +147,9 @@ async def cmd_ignored(message: types.Message):
         parse_mode=ParseMode.HTML
     )
 
-# ======================
-# Обработчики событий
-# ======================
+# ======== Callback обработка ========
 @dp.callback_query()
 async def process_callback(callback: types.CallbackQuery):
-    """Обрабатывает нажатия кнопок"""
     if not await is_admin(callback.from_user.id):
         await callback.answer("Доступ запрещен")
         return
@@ -184,7 +161,6 @@ async def process_callback(callback: types.CallbackQuery):
 
     try:
         if data in ["open_all", "close_all"]:
-            # Массовое открытие/закрытие чатов
             is_open = data == "open_all"
             for chat_id in chats:
                 total_attempted += 1
@@ -200,7 +176,6 @@ async def process_callback(callback: types.CallbackQuery):
             await callback.answer(f"✅ {updated_count}/{total_attempted} чатов {'открыто' if is_open else 'закрыто'}")
 
         elif data.startswith("toggle:"):
-            # Переключение конкретного чата
             chat_id = data.split(":")[1]
             if chat_id in chats:
                 try:
@@ -216,28 +191,27 @@ async def process_callback(callback: types.CallbackQuery):
                     logger.warning(f"Ошибка в toggle-чате {chat_id}: {e}")
                     await callback.answer("❌ Не удалось изменить чат")
 
-        # Обновляем сообщение с кнопками
+        save_chats(chats)
         await cmd_manage(callback.message)
 
     except Exception as e:
         logger.error(f"Ошибка: {e}")
         await callback.answer("❌ Ошибка")
 
+# ======== Трекинг сообщений ========
 @dp.message()
 async def track_message(message: types.Message):
-    """Отслеживает новые сообщения"""
     if not TRACKING_ENABLED:
         return
 
-    # Проверяем права и игнор-лист (исправленное условие)
-    if (not await is_admin(message.from_user.id) and \
-       str(message.from_user.id) not in load_ignored_users() and \
-       str(message.chat.id) in load_chats():
-
+    if (
+        not await is_admin(message.from_user.id) and
+        str(message.from_user.id) not in load_ignored_users() and
+        str(message.chat.id) in load_chats()
+    ):
         user = message.from_user
         chat = message.chat
-        
-        # Правильная генерация ссылки
+
         try:
             if chat.username:
                 message_link = f"https://t.me/{chat.username}/{message.message_id}"
@@ -250,7 +224,6 @@ async def track_message(message: types.Message):
             logger.error(f"Ошибка генерации ссылки: {e}")
             message_link = "Не удалось создать ссылку"
 
-        # Отправка уведомления
         text = (
             f"📨 <b>Новое сообщение</b>\n"
             f"👤 <b>От:</b> {user.full_name} (@{user.username or 'нет'})\n"
@@ -259,21 +232,18 @@ async def track_message(message: types.Message):
             f"🔗 <a href='{message_link}'>Ссылка на сообщение</a>\n\n"
             f"📝 <b>Текст:</b>\n<code>{message.text or 'Медиа-сообщение'}</code>"
         )
-        
-        for admin_id in ADMIN_ID:
-            try:
-                await bot.send_message(
-                    admin_id,
-                    text,
-                    parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=True
-                )
-            except Exception as e:
-                logger.error(f"Ошибка отправки admin {admin_id}: {e}")
 
-# ========
-# Запуск
-# ========
+        try:
+            await bot.send_message(
+                ADMIN_ID,
+                text,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True
+            )
+        except Exception as e:
+            logger.error(f"Ошибка отправки администратору: {e}")
+
+# ======== Запуск ========
 async def main():
     logger.info("Бот запускается...")
     await dp.start_polling(bot)
