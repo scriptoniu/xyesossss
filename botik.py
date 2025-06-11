@@ -174,11 +174,12 @@ async def track_message(message: types.Message):
     if not TRACKING_ENABLED:
         return
 
-    # Пропускаем анонимных (пишущих от имени чата)
-    if message.sender_chat and message.sender_chat.id != message.chat.id:
+    # Пропускаем, если пишет анонимный админ от имени чата
+    if message.sender_chat and message.sender_chat.id == message.chat.id:
         return
 
-    if message.from_user is None:
+    # Если от пользователя (не от имени чата), но from_user отсутствует — пропускаем
+    if not message.from_user:
         return
 
     user_id = str(message.from_user.id)
@@ -193,6 +194,7 @@ async def track_message(message: types.Message):
     if user_id in load_ignored_users():
         return
 
+    # Генерация уведомления
     user = message.from_user
     chat = message.chat
 
