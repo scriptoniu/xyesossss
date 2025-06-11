@@ -10,7 +10,7 @@ from aiogram.client.default import DefaultBotProperties  # ← добавлен�
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = "7755541704:AAHINZn-mtLddqc7RJV1VHCpE6AbAzwAAuI"
+BOT_TOKEN = "7408741591:AAFRnWBMc1Cdd2cfjRpljzAjcf9k8dN24zI"
 ADMIN_ID = 7091921882
 CHATS_FILE = "target_chats.txt"
 IGNORED_USERS_FILE = "ignored_users.txt"
