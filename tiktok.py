@@ -6,7 +6,7 @@ from aiogram.utils import executor
 from aiogram.dispatcher.filters import CommandStart
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 
-API_TOKEN = 'YOUR_BOT_TOKEN_HERE'  # Замени на свой токен
+API_TOKEN = '7755541704:AAGkzAZZ-Sigl4SF8dw8UUtGO1HD4oeMews'  # Замени на свой токен
 
 logging.basicConfig(level=logging.INFO)
 
