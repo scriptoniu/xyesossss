@@ -1,7 +1,7 @@
 import logging
 import requests
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InputMediaPhoto import ParseMode
+from aiogram.types import InputMediaPhoto, ParseMode
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import CommandStart
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
