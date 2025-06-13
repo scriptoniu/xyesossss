@@ -1,7 +1,7 @@
 import logging
 import requests
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import ParseMode
+from aiogram.types import InputMediaPhoto import ParseMode
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import CommandStart
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
@@ -40,10 +40,9 @@ async def handle_tiktok(message: types.Message):
     data = result["data"]
 
     if "images" in data and data["images"]:
-        # Пост с изображениями (фото или карусель)
-        for img_url in data["images"]:
-            await message.answer_photo(img_url)
-        await message.answer("✅ Вот твои изображения без водяного знака.")
+    media_group = [InputMediaPhoto(media=img_url) for img_url in data["images"][:10]]  # до 10 штук
+    await message.answer_media_group(media_group)
+    await message.answer("✅ Вот твои изображения без водяного знака.")
     elif "play" in data and data["play"]:
         # Видео
         await message.answer_video(data["play"])
