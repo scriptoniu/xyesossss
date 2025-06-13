@@ -3,57 +3,71 @@ import requests
 import re
 from aiogram import Bot, Dispatcher, types, executor
 
-# === Твой токен от BotFather ===
+# === 🔑 Укажи свой токен от BotFather ===
 API_TOKEN = '7755541704:AAGkzAZZ-Sigl4SF8dw8UUtGO1HD4oeMews'
 
-# === Настройка логирования и инициализация бота ===
+# === ⚙️ Настройка логов и бота ===
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
 
-# === Проверка ссылки TikTok ===
+# === 🔗 Проверка, TikTok ли это вообще ===
 def is_valid_tiktok_url(url):
-    return re.match(r'https?://(vm\.tiktok\.com|www\.tiktok\.com)/', url)
+    return re.match(r'https?://(vm\.tiktok\.com|vt\.tiktok\.com|www\.tiktok\.com)/', url)
 
-# === TikWM API: получаем прямую ссылку на видео без водяного знака ===
+# === ↪️ Разворачиваем короткую ссылку (если нужно) ===
+def expand_short_url(url):
+    try:
+        session = requests.Session()
+        response = session.head(url, allow_redirects=True, timeout=5)
+        return response.url
+    except Exception as e:
+        print(f"[expand_short_url] Ошибка: {e}")
+        return url  # если не удалось — вернём как есть
+
+# === 📥 Получение видео через TikWM API ===
 def get_video_url(tiktok_url):
     api_url = 'https://tikwm.com/api/'
     try:
         resp = requests.get(api_url, params={'url': tiktok_url}, timeout=10)
         data = resp.json()
         if data.get("code") == 0:
-            return data["data"]["play"]  # Ссылка на видео без водяка
+            return data["data"]["play"]
         else:
+            print(f"[get_video_url] TikWM ответ: {data}")
             return None
     except Exception as e:
-        print(f"Ошибка запроса к API: {e}")
+        print(f"[get_video_url] Ошибка: {e}")
         return None
 
-# === /start ===
+# === /start команда ===
 @dp.message_handler(commands=['start'])
 async def start_handler(message: types.Message):
     await message.answer("👋 Привет! Пришли мне ссылку на TikTok, и я скачаю видео без водяного знака 🎬")
 
-# === Обработка сообщений с TikTok-ссылками ===
+# === Обработка сообщений ===
 @dp.message_handler()
 async def download_handler(message: types.Message):
     url = message.text.strip()
 
     if not is_valid_tiktok_url(url):
-        await message.reply("❗ Это не похоже на ссылку TikTok. Попробуй ещё раз.")
+        await message.reply("❗ Это не похоже на ссылку TikTok. Пришли корректную ссылку.")
         return
 
-    await message.reply("⏳ Обрабатываю ссылку...")
+    await message.reply("🔄 Обрабатываю...")
 
-    video_url = get_video_url(url)
+    full_url = expand_short_url(url)
+    video_url = get_video_url(full_url)
+
     if video_url:
         try:
-            await bot.send_video(chat_id=message.chat.id, video=video_url, caption="✅ Вот твоё видео без водяного знака")
-        except:
+            await bot.send_video(chat_id=message.chat.id, video=video_url, caption="✅ Готово! Вот твоё видео без водяного знака")
+        except Exception as e:
+            print(f"[send_video] Ошибка: {e}")
             await message.reply(f"⚠️ Не удалось отправить видео (возможно, слишком большое). Вот ссылка:\n{video_url}")
     else:
-        await message.reply("❌ Не удалось скачать видео. Попробуй позже.")
+        await message.reply("❌ Не удалось скачать видео. Возможно, оно приватное или TikTok изменил структуру ссылок.")
 
-# === Запуск ===
+# === 🚀 Запуск ===
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
