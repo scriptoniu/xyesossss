@@ -1,7 +1,7 @@
 import logging
 import requests
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InputMediaPhoto, ParseMode
+from aiogram.types import InputMediaPhoto
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import CommandStart
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
@@ -17,9 +17,12 @@ dp.middleware.setup(LoggingMiddleware())
 
 def get_tiktok_data(url):
     api_url = f"https://tikwm.com/api/?url={url}"
-    response = requests.get(api_url)
-    if response.status_code == 200:
-        return response.json()
+    try:
+        response = requests.get(api_url, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+    except requests.RequestException:
+        return None
     return None
 
 
@@ -28,7 +31,7 @@ async def start_cmd(message: types.Message):
     await message.answer("👋 Привет! Отправь мне ссылку на TikTok-видео, и я скачаю его без водяного знака!")
 
 
-@dp.message_handler(lambda message: 'tiktok.com' in message.text or 'vt.tiktok.com' in message.text)
+@dp.message_handler(lambda message: message.text and ('tiktok.com' in message.text or 'vt.tiktok.com' in message.text))
 async def handle_tiktok(message: types.Message):
     await message.answer("⏳ Обрабатываю...")
 
@@ -40,9 +43,9 @@ async def handle_tiktok(message: types.Message):
     data = result["data"]
 
     if "images" in data and data["images"]:
-    media_group = [InputMediaPhoto(media=img_url) for img_url in data["images"][:10]]  # до 10 штук
-    await message.answer_media_group(media_group)
-    await message.answer("✅ Вот твои изображения без водяного знака.")
+        media_group = [InputMediaPhoto(media=img_url) for img_url in data["images"][:10]]  # до 10 штук
+        await message.answer_media_group(media_group)
+        await message.answer("✅ Вот твои изображения без водяного знака.")
     elif "play" in data and data["play"]:
         # Видео
         await message.answer_video(data["play"])
