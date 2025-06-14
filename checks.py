@@ -18,8 +18,18 @@ def load_proxies(file_path='proxies.txt'):
 
 def get_proxy():
     proxy_list = load_proxies()
-    proxy_line = random.choice(proxy_list)  # Можно выбрать рандомный
+    proxy_line = random.choice(proxy_list)
+    print(f"[proxy] Подключение через: {proxy_line}")
     parts = proxy_line.split(':')
+
+    if len(parts) == 2:
+        ip, port = parts
+        return (socks.SOCKS5, ip, int(port))
+    elif len(parts) == 4:
+        ip, port, login, password = parts
+        return (socks.SOCKS5, ip, int(port), True, login, password)
+    else:
+        raise ValueError(f"Неверный формат прокси: {proxy_line}")
 
     if len(parts) == 2:
         ip, port = parts
