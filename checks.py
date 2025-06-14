@@ -8,10 +8,31 @@ from telethon.tl.functions.messages import ImportChatInviteRequest
 from telethon.tl.functions.channels import JoinChannelRequest
 from concurrent.futures import ThreadPoolExecutor
 from config import *
+import socks
+import random
 
+def load_proxies(file_path='proxies.txt'):
+    with open(file_path, 'r') as f:
+        proxies = [line.strip() for line in f if line.strip()]
+    return proxies
+
+def get_proxy():
+    proxy_list = load_proxies()
+    proxy_line = random.choice(proxy_list)  # Можно выбрать рандомный
+    parts = proxy_line.split(':')
+
+    if len(parts) == 2:
+        ip, port = parts
+        return (socks.SOCKS5, ip, int(port))
+    elif len(parts) == 4:
+        ip, port, login, password = parts
+        return (socks.SOCKS5, ip, int(port), True, login, password)
+    else:
+        raise ValueError("Неверный формат прокси")
 # https://t.me/+7xF6Jb3ka9A0ZDhi
 
-client = TelegramClient(session='session', api_id=int(api_id), api_hash=api_hash, system_version="4.16.30-vxSOSYNXA ")
+proxy = get_proxy()
+client = TelegramClient(session='session', api_id=int(api_id), api_hash=api_hash, proxy=proxy, system_version="4.16.30-vxSOSYNXA")
 
 code_regex = re.compile(r"t\.me/(CryptoBot|send|tonRocketBot|CryptoTestnetBot|wallet|xrocket|xJetSwapBot)\?start=(CQ[A-Za-z0-9]{10}|C-[A-Za-z0-9]{10}|t_[A-Za-z0-9]{15}|mci_[A-Za-z0-9]{15}|c_[a-z0-9]{24})", re.IGNORECASE)
 url_regex = re.compile(r"https:\/\/t\.me\/\+(\w{12,})")
