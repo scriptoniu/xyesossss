@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from config import *
 import socks
 import random
+from telethon.sessions import StringSession
 
 def load_proxies(file_path='proxies.txt'):
     with open(file_path, 'r') as f:
@@ -42,7 +43,27 @@ def get_proxy():
 # https://t.me/+7xF6Jb3ka9A0ZDhi
 
 proxy = get_proxy()
-client = TelegramClient(session='session', api_id=int(api_id), api_hash=api_hash, proxy=proxy, system_version="4.16.30-vxSOSYNXA")
+async def create_authenticated_client():
+    client = TelegramClient('session', api_id=int(api_id), api_hash=api_hash, proxy=proxy, system_version="4.16.30-vxSOSYNXA")
+    
+    if not await client.is_user_authorized():
+        phone = input('Введите номер телефона (например, +79991234567): ')
+        await client.connect()
+        try:
+            await client.send_code_request(phone)
+            code = input('Введите код из Telegram: ')
+            try:
+                await client.sign_in(phone, code)
+            except Exception as e:
+                if 'SESSION_PASSWORD_NEEDED' in str(e):
+                    password = input('Включена двухфакторная аутентификация. Введите пароль: ')
+                    await client.sign_in(password=password)
+        except Exception as e:
+            print(f'[!] Ошибка при входе: {e}')
+            exit()
+    return client
+
+client = asyncio.get_event_loop().run_until_complete(create_authenticated_client())
 
 code_regex = re.compile(r"t\.me/(CryptoBot|send|tonRocketBot|CryptoTestnetBot|wallet|xrocket|xJetSwapBot)\?start=(CQ[A-Za-z0-9]{10}|C-[A-Za-z0-9]{10}|t_[A-Za-z0-9]{15}|mci_[A-Za-z0-9]{15}|c_[a-z0-9]{24})", re.IGNORECASE)
 url_regex = re.compile(r"https:\/\/t\.me\/\+(\w{12,})")
