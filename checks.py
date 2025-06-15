@@ -65,7 +65,16 @@ async def create_authenticated_client():
             exit()
     return client
 
-client = asyncio.get_event_loop().run_until_complete(create_authenticated_client())
+async def main():
+    global client
+    client = await create_authenticated_client()
+
+    try:
+        await client.start()
+        ...
+        await client.run_until_disconnected()
+    except Exception as e:
+        print(f'[!] Ошибка коннекта > {e}')
 
 code_regex = re.compile(r"t\.me/(CryptoBot|send|tonRocketBot|CryptoTestnetBot|wallet|xrocket|xJetSwapBot)\?start=(CQ[A-Za-z0-9]{10}|C-[A-Za-z0-9]{10}|t_[A-Za-z0-9]{15}|mci_[A-Za-z0-9]{15}|c_[a-z0-9]{24})", re.IGNORECASE)
 url_regex = re.compile(r"https:\/\/t\.me\/\+(\w{12,})")
@@ -308,4 +317,5 @@ async def main():
         print(f'[!] Ошибка коннекта > {e}')
 
 
-asyncio.run(main())
+if __name__ == '__main__':
+    asyncio.run(main())
