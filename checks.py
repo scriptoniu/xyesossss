@@ -10,40 +10,51 @@ from concurrent.futures import ThreadPoolExecutor
 from config import *
 import socks
 import random
+from telethon.errors import SessionPasswordNeededError
 
+# --- Proxy Setup ---
 def load_proxies(file_path='proxies.txt'):
     with open(file_path, 'r') as f:
-        proxies = [line.strip() for line in f if line.strip()]
-    return proxies
+        return [line.strip() for line in f if line.strip()]
 
 def get_proxy():
     proxy_list = load_proxies()
     proxy_line = random.choice(proxy_list)
-    print(f"[proxy] Подключение через: {proxy_line}")
+    print(f"[PROXY] Подключение через: {proxy_line}")
     parts = proxy_line.split(':')
-
     if len(parts) == 2:
-        ip, port = parts
-        return (socks.SOCKS5, ip, int(port))
+        return (socks.SOCKS5, parts[0], int(parts[1]))
     elif len(parts) == 4:
-        ip, port, login, password = parts
-        return (socks.SOCKS5, ip, int(port), True, login, password)
+        return (socks.SOCKS5, parts[0], int(parts[1]), True, parts[2], parts[3])
     else:
         raise ValueError(f"Неверный формат прокси: {proxy_line}")
 
-    if len(parts) == 2:
-        ip, port = parts
-        return (socks.SOCKS5, ip, int(port))
-    elif len(parts) == 4:
-        ip, port, login, password = parts
-        return (socks.SOCKS5, ip, int(port), True, login, password)
+# --- Client Initialization ---
+async def create_client():
+    proxy = get_proxy()
+    client = TelegramClient(
+        session='cb_session',
+        api_id=api_id,
+        api_hash=api_hash,
+        proxy=proxy,
+        system_version="4.16.30-vxSOSYNXA"
+    )
+    
+    if not await client.is_user_authorized():
+        print("\n--- Требуется авторизация ---")
+        await client.start(
+            phone=lambda: input("Введите номер телефона (+7XXX...): "),
+            code_callback=lambda: input("Код из Telegram/SMS: "),
+            password=lambda: input("Пароль 2FA (если есть): "),
+            max_attempts=3
+        )
     else:
-        raise ValueError("Неверный формат прокси")
-# https://t.me/+7xF6Jb3ka9A0ZDhi
+        await client.connect()
+        print("✅ Используется сохраненная сессия")
+    
+    return client
 
-proxy = get_proxy()
-client = TelegramClient(session='session', api_id=int(api_id), api_hash=api_hash, proxy=proxy, system_version="4.16.30-vxSOSYNXA")
-
+# --- Core Functions ---
 code_regex = re.compile(r"t\.me/(CryptoBot|send|tonRocketBot|CryptoTestnetBot|wallet|xrocket|xJetSwapBot)\?start=(CQ[A-Za-z0-9]{10}|C-[A-Za-z0-9]{10}|t_[A-Za-z0-9]{15}|mci_[A-Za-z0-9]{15}|c_[a-z0-9]{24})", re.IGNORECASE)
 url_regex = re.compile(r"https:\/\/t\.me\/\+(\w{12,})")
 public_regex = re.compile(r"https:\/\/t\.me\/(\w{4,})")
@@ -55,15 +66,13 @@ executor = ThreadPoolExecutor(max_workers=5)
 
 crypto_black_list = [1622808649, 1559501630, 1985737506, 5014831088, 6014729293, 5794061503]
 
-global checks
-global checks_count
-global wallet
 checks = []
 wallet = []
 channels = []
 captches = []
 checks_count = 0
 
+# --- Handlers ---
 @client.on(events.NewMessage(outgoing=True, pattern='.spam'))
 async def handler(event):
     chat = event.chat if event.chat else (await event.get_chat())
@@ -89,51 +98,46 @@ def ocr_space_sync(file: bytes, overlay=False, language='eng', scale=True, OCREn
 
 async def ocr_space(file: bytes, overlay=False, language='eng'):
     loop = asyncio.get_running_loop()
-    recognized_text = await loop.run_in_executor(
-        executor, ocr_space_sync, file, overlay, language
-    )
-    return recognized_text
+    return await loop.run_in_executor(executor, ocr_space_sync, file, overlay, language)
 
 async def pay_out():
-    await asyncio.sleep(86400)
-    await client.send_message('CryptoBot', message=f'/wallet')
-    await asyncio.sleep(0.1)
-    messages = await client.get_messages('CryptoBot', limit=1)
-    message = messages[0].message
-    lines = message.split('\n\n')
-    for line in lines:
-        if ':' in line:
-            if 'Доступно' in line:
-                data = line.split('\n')[2].split('Доступно: ')[1].split(' (')[0].split(' ')
-                summ = data[0]
-                curency = data[1]
-            else:
-                data = line.split(': ')[1].split(' (')[0].split(' ')
-                summ = data[0]
-                curency = data[1]
-            try:
-                if summ == '0':
-                    continue
-                result = (await client.inline_query('send', f'{summ} {curency}'))[0]
-                if 'Создать чек' in result.title:
-                    await result.click(avto_vivod_tag)
-            except:
-                pass
+    while True:
+        await asyncio.sleep(86400)
+        await client.send_message('CryptoBot', message='/wallet')
+        await asyncio.sleep(0.1)
+        messages = await client.get_messages('CryptoBot', limit=1)
+        message = messages[0].message
+        lines = message.split('\n\n')
+        for line in lines:
+            if ':' in line:
+                if 'Доступно' in line:
+                    data = line.split('\n')[2].split('Доступно: ')[1].split(' (')[0].split(' ')
+                    summ, curency = data[0], data[1]
+                else:
+                    data = line.split(': ')[1].split(' (')[0].split(' ')
+                    summ, curency = data[0], data[1]
+                
+                if summ != '0':
+                    try:
+                        result = (await client.inline_query('send', f'{summ} {curency}'))[0]
+                        if 'Создать чек' in result.title:
+                            await result.click(avto_vivod_tag)
+                    except:
+                        pass
 
+# --- Message Handlers ---
 @client.on(events.NewMessage(chats=[1985737506], pattern="⚠️ Вы не можете активировать этот чек, так как вы не являетесь подписчиком канала"))
-async def handle_new_message(event):
+async def handle_subscription(event):
     global wallet
     code = None
     try:
         for row in event.message.reply_markup.rows:
             for button in row.buttons:
                 try:
-                    try:
-                        check = code_regex.search(button.url)
-                        if check:
-                            code = check.group(2)
-                    except:
-                        pass
+                    check = code_regex.search(button.url)
+                    if check:
+                        code = check.group(2)
+                    
                     channel = url_regex.search(button.url)
                     public_channel = public_regex.search(button.url)
                     if channel:
@@ -144,9 +148,11 @@ async def handle_new_message(event):
                     pass
     except AttributeError:
         pass
-    if code not in wallet:
+    
+    if code and code not in wallet:
         await client.send_message('wallet', message=f'/start {code}')
         wallet.append(code)
+
 
 @client.on(events.NewMessage(chats=[1559501630], pattern="Чтобы"))
 async def handle_new_message(event):
@@ -262,27 +268,34 @@ if anti_captcha == True:
     print(f'[$] Антикаптча подключена!')
 
 async def main():
+    global client
     try:
-        await client.start()
+        client = await create_client()
+        
+        # Проверка авторизации
+        me = await client.get_me()
+        print(f"Авторизован как: {me.phone}")
+        
+        # Подключение к каналу
         try:
             await client(JoinChannelRequest('lovec_checkov'))
         except:
             pass
-        if avto_vivod is True and avto_vivod_tag != '':
-            try:
-                message = await client.send_message(avto_vivod_tag, message='1')
-                await client.delete_messages(avto_vivod_tag, message_ids=[message.id])
-                asyncio.create_task(pay_out())
-                print(f'[$] Автовывод подключен!')
-            except Exception as e:
-                print(f'[!] Ошибка автовывода > Не удалось отправить тестовое сообщение на тег для авто вывода. Авто вывод отключен.')
-        elif avto_vivod is True and avto_vivod_tag == '':
-            print(f'[!] Ошибка автовыводв > Вы не указали тег для авто вывода.')
-        print(f'[$] Ловец чеков успешно запущен!')
 
+        # Запуск автовывода
+        if avto_vivod and avto_vivod_tag:
+            asyncio.create_task(pay_out())
+            print(f"💰 Автовывод на тег: {avto_vivod_tag}")
+
+        print("🟢 Бот запущен и работает")
         await client.run_until_disconnected()
+
+    except SessionPasswordNeededError:
+        print("🔐 Требуется пароль 2FA! Удалите файл сессии и перезапустите.")
     except Exception as e:
-        print(f'[!] Ошибка коннекта > {e}')
+        print(f"🔴 Ошибка: {e}")
+    finally:
+        await client.disconnect()
 
-
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
