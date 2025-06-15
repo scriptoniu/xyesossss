@@ -46,6 +46,8 @@ proxy = get_proxy()
 async def create_authenticated_client():
     client = TelegramClient('session', api_id=int(api_id), api_hash=api_hash, proxy=proxy, system_version="4.16.30-vxSOSYNXA")
     
+    await client.connect()
+    
     if not await client.is_user_authorized():
         phone = input('Введите номер телефона (например, +79991234567): ')
         await client.connect()
